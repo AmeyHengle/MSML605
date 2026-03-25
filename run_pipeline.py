@@ -3,11 +3,16 @@ from __future__ import annotations
 from pathlib import Path
 import sys
 
+# Make src/ importable when running as a script (common local layout).
+_ROOT = Path(__file__).resolve().parent
+_SRC = _ROOT / "src"
+if _SRC.exists() and str(_SRC) not in sys.path:
+    sys.path.insert(0, str(_SRC))
+
 import logging
 import warnings
 import mlflow
 import mlflow.sklearn
-breakpoint()
 from log_tracking import setup_run_logging
 from ml605_pipeline.config import load_config_from_env
 from ml605_pipeline.data import fetch_window_dataframe
@@ -19,13 +24,6 @@ from ml605_pipeline.features import (
     one_hot_intensity_index,
 )
 from ml605_pipeline.modeling import time_split, train_random_forest
-
-
-# Make src/ importable when running as a script (common local layout).
-_ROOT = Path(__file__).resolve().parent
-_SRC = _ROOT / "src"
-if _SRC.exists() and str(_SRC) not in sys.path:
-    sys.path.insert(0, str(_SRC))
 
 
 def main() -> None:
