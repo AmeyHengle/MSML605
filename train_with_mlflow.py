@@ -90,10 +90,17 @@ def main() -> None:
     ]
 
     with mlflow.start_run(run_name="random_forest_baseline"):
+        # Log baseline RMSE using forecast_intensity if available
+        if "forecast_intensity" in df.columns:
+            fc_test = df["forecast_intensity"].iloc[split_idx:].fillna(df["forecast_intensity"].mean())
+            baseline_rmse = float(mean_squared_error(y_test, fc_test) ** 0.5)
+            mlflow.log_metric("baseline_rmse_forecast", baseline_rmse)
+
         model = RandomForestRegressor(
             n_estimators=300,
             max_depth=14,
             random_state=42,
+            oob_score=True,
             n_jobs=-1,
         )
         model.fit(X_train, y_train)
@@ -108,6 +115,16 @@ def main() -> None:
         mlflow.log_metric("mae", float(mae))
         mlflow.log_metric("r2", float(r2))
         mlflow.log_metric("mape", float(mape))
+
+        # Log training metrics
+        train_preds = model.predict(X_train)
+        rmse_train = mean_squared_error(y_train, train_preds) ** 0.5
+        r2_train = r2_score(y_train, train_preds)
+        mlflow.log_metric("rmse_train", float(rmse_train))
+        mlflow.log_metric("r2_train", float(r2_train))
+
+        # Log OOB score
+        mlflow.log_metric("oob_score", float(model.oob_score_))
         mlflow.log_param("feature_count", len(feature_cols))
         mlflow.log_param("train_rows", len(X_train))
         mlflow.log_param("test_rows", len(X_test))
@@ -133,6 +150,11 @@ def main() -> None:
         logger.info("MAE : %.4f", mae)
         logger.info("R2  : %.4f", r2)
         logger.info("MAPE: %.2f%%", mape)
+        if "forecast_intensity" in df.columns:
+            logger.info("Baseline RMSE (forecast_intensity): %.4f", baseline_rmse)
+        logger.info("Train RMSE: %.4f", rmse_train)
+        logger.info("Train R2: %.4f", r2_train)
+        logger.info("OOB Score: %.4f", model.oob_score_)
 
 
 if __name__ == "__main__":
