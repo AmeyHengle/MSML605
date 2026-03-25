@@ -1,0 +1,36 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# mlflow
+mlruns/
+
+# data
+historical_data.csv
+intensity_factors.json
+
+# logs (keep directory; ignore log files)
+logs/*
+!logs/.gitkeep
+
+# cache
+cache/
+
+# temp
+temp/
+
+# config
+config/
+
+# vscode
+.vscode/
+
+# cursor
+.cursor/
