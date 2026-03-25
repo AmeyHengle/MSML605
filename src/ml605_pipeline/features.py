@@ -6,6 +6,9 @@ from pathlib import Path
 import pandas as pd
 
 
+_INTENSITY_CATEGORIES = ["very low", "low", "moderate", "high", "very high"]
+
+
 def normalize_factor_name(name: str) -> str:
     normalized = re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_")
     return f"factor_{normalized}"
@@ -27,7 +30,8 @@ def one_hot_intensity_index(df: pd.DataFrame) -> pd.DataFrame:
     if "intensity_index" not in df.columns:
         return df
     df = df.copy()
-    encoded = pd.get_dummies(df["intensity_index"].astype("string"), prefix="intensity_index")
+    cat = pd.CategoricalDtype(categories=_INTENSITY_CATEGORIES, ordered=False)
+    encoded = pd.get_dummies(df["intensity_index"].astype(cat), prefix="intensity_index")
     df = pd.concat([df.drop(columns=["intensity_index"]), encoded], axis=1)
     return df
 
