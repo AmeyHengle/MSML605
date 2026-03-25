@@ -36,14 +36,20 @@ def train_random_forest(
         max_depth=14,
         random_state=random_state,
         n_jobs=-1,
+        oob_score=True,
     )
     model.fit(X_train, y_train)
     preds = model.predict(X_test)
+    preds_train = model.predict(X_train)
 
     rmse = mean_squared_error(y_test, preds) ** 0.5
     mae = mean_absolute_error(y_test, preds)
     r2 = r2_score(y_test, preds)
+    # MAPE: rows where y==0 are excluded from the mean (replaced with NaN) to avoid division by zero.
     mape = float(np.mean(np.abs((y_test - preds) / y_test.replace(0, np.nan))) * 100)
+
+    rmse_train = mean_squared_error(y_train, preds_train) ** 0.5
+    r2_train = r2_score(y_train, preds_train)
 
     return TrainResult(
         model=model,
@@ -52,6 +58,9 @@ def train_random_forest(
             "mae": float(mae),
             "r2": float(r2),
             "mape": float(mape),
+            "rmse_train": float(rmse_train),
+            "r2_train": float(r2_train),
+            "oob_score": float(model.oob_score_),
         },
     )
 
