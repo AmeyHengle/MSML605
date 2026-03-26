@@ -91,7 +91,7 @@ def main() -> None:
         run_id = run.info.run_id
 
     # Register the best model in MLflow Model Registry
-    version = register_model(run_id=run_id)
+    version = register_model(run_id=result.best.run_id)
     transition_model_stage(version=version, stage="Staging")
     logger.info("Model v%s registered as Staging in MLflow Model Registry.", version)
     logger.info("To promote to Production: transition_model_stage('%s', 'Production')", version)

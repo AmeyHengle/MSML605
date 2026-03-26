@@ -32,6 +32,7 @@ from ml605_pipeline.data import fetch_window_dataframe
 from ml605_pipeline.drift import detect_drift
 from ml605_pipeline.features import (
     add_time_features,
+    apply_factor_columns,
     load_feature_list,
     one_hot_intensity_index,
 )
@@ -73,6 +74,8 @@ def main() -> int:
 
     live_df = add_time_features(live_df)
     live_df = one_hot_intensity_index(live_df)
+    live_df = apply_factor_columns(live_df, result.factors)
+    ref_df = apply_factor_columns(ref_df, result.factors)
 
     # Only test numeric features present in both DataFrames
     numeric_cols = [
