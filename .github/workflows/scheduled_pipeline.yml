@@ -25,10 +25,26 @@ jobs:
       - name: Set up uv
         uses: astral-sh/setup-uv@v4
         with:
-          version: "latest"
+          version: "0.10.10"
+          python-version: "3.13"
 
       - name: Install dependencies
         run: uv sync
 
       - name: Run daily pipeline (drift check + conditional retraining)
         run: uv run python run_pipeline.py
+
+      - name: Report failure
+        if: failure()
+        run: |
+          echo "Pipeline failed at $(date -u)" >> pipeline_failure.log
+          echo "Branch: ${{ github.ref }}" >> pipeline_failure.log
+          echo "Run ID: ${{ github.run_id }}" >> pipeline_failure.log
+
+      - name: Upload failure log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pipeline-failure-${{ github.run_id }}
+          path: pipeline_failure.log
+          retention-days: 7
