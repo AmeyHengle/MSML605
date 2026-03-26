@@ -40,3 +40,11 @@ def test_eval_result_to_dict_has_required_keys() -> None:
     d = result.to_dict()
     assert {"rmse", "mae", "r2", "mape"}.issubset(d.keys())
     assert all(np.isfinite(v) for v in d.values())
+
+
+def test_compute_metrics_all_zero_targets_mape_is_nan() -> None:
+    """When all targets are zero, MAPE is undefined (NaN). Document this as expected behavior."""
+    y = pd.Series([0.0, 0.0, 0.0])
+    preds = np.array([1.0, 2.0, 3.0])
+    result = compute_metrics(y, preds)
+    assert np.isnan(result.mape)
