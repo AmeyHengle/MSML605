@@ -34,7 +34,7 @@ def get_production_model_uri() -> str | None:
         return None
 
 
-def load_production_model():
+def load_production_model() -> object | None:
     """Load and return the current Production model. Returns None if none registered."""
     uri = get_production_model_uri()
     if uri is None:
