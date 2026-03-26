@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import mlflow
 import numpy as np
 import pandas as pd
 import pytest
@@ -9,6 +10,7 @@ from ml605_pipeline.automl import (
     CANDIDATE_MODELS,
     ModelCandidate,
     _evaluate_candidate,
+    run_automl,
 )
 
 
@@ -43,3 +45,16 @@ def test_evaluate_candidate_metrics_are_finite() -> None:
         assert all(np.isfinite(v) for v in result.metrics.values()), (
             f"Non-finite metric in {name}: {result.metrics}"
         )
+
+
+def test_run_automl_returns_best_model_by_rmse() -> None:
+    """run_automl selects the candidate with lowest test RMSE across all models."""
+    X_train, X_test, y_train, y_test = _make_regression_data()
+    with mlflow.start_run():  # Parent context required for nested runs
+        result = run_automl(X_train, y_train, X_test, y_test)
+
+    assert isinstance(result, AutoMLResult)
+    assert isinstance(result.best, ModelCandidate)
+    assert len(result.all_candidates) == len(CANDIDATE_MODELS)
+    # Best must be the candidate with minimum RMSE
+    assert result.best.rmse == min(c.rmse for c in result.all_candidates)

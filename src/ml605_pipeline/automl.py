@@ -11,6 +11,7 @@ from sklearn.ensemble import (
     HistGradientBoostingRegressor,
     RandomForestRegressor,
 )
+from sklearn.base import clone
 from sklearn.linear_model import Ridge
 
 from ml605_pipeline.evaluate import compute_metrics
@@ -89,7 +90,8 @@ def run_automl(
     """
     candidates: list[ModelCandidate] = []
 
-    for name, model in CANDIDATE_MODELS.items():
+    for name, model_template in CANDIDATE_MODELS.items():
+        model = clone(model_template)
         with mlflow.start_run(run_name=name, nested=True):
             candidate = _evaluate_candidate(name, model, X_train, y_train, X_test, y_test)
             mlflow.log_param("model_type", name)
