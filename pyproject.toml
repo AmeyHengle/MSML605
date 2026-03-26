@@ -9,6 +9,7 @@ dependencies = [
     "pandas>=2.3.3",
     "pytest>=9.0.2",
     "scikit-learn>=1.8.0",
+    "scipy>=1.13",
 ]
 
 [tool.pytest.ini_options]

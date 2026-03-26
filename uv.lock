@@ -810,6 +810,7 @@ dependencies = [
     { name = "pandas" },
     { name = "pytest" },
     { name = "scikit-learn" },
+    { name = "scipy" },
 ]
 
 [package.metadata]
@@ -818,6 +819,7 @@ requires-dist = [
     { name = "pandas", specifier = ">=2.3.3" },
     { name = "pytest", specifier = ">=9.0.2" },
     { name = "scikit-learn", specifier = ">=1.8.0" },
+    { name = "scipy", specifier = ">=1.13" },
 ]
 
 [[package]]
