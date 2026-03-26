@@ -58,3 +58,6 @@ def test_run_automl_returns_best_model_by_rmse() -> None:
     assert len(result.all_candidates) == len(CANDIDATE_MODELS)
     # Best must be the candidate with minimum RMSE
     assert result.best.rmse == min(c.rmse for c in result.all_candidates)
+    # Each candidate must have a populated run_id from its nested MLflow run
+    for candidate in result.all_candidates:
+        assert candidate.run_id != "", f"run_id not set for candidate {candidate.name}"

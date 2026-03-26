@@ -41,6 +41,7 @@ class ModelCandidate:
     model: object
     metrics: dict[str, float]
     rmse: float  # Primary selection criterion
+    run_id: str = ""  # MLflow child run ID where this model's artifact is logged
 
 
 @dataclass(frozen=True)
@@ -92,12 +93,22 @@ def run_automl(
 
     for name, model_template in CANDIDATE_MODELS.items():
         model = clone(model_template)
-        with mlflow.start_run(run_name=name, nested=True):
+        with mlflow.start_run(run_name=name, nested=True) as child_run:
             candidate = _evaluate_candidate(name, model, X_train, y_train, X_test, y_test)
             mlflow.log_param("model_type", name)
             mlflow.log_param("feature_count", X_train.shape[1])
             for k, v in candidate.metrics.items():
                 mlflow.log_metric(k, v)
+            mlflow.sklearn.log_model(model, artifact_path="model")
+            child_run_id = child_run.info.run_id
+        # Rebuild with run_id (dataclass is frozen so we use replace pattern)
+        candidate = ModelCandidate(
+            name=candidate.name,
+            model=candidate.model,
+            metrics=candidate.metrics,
+            rmse=candidate.rmse,
+            run_id=child_run_id,
+        )
         candidates.append(candidate)
 
     best = min(candidates, key=lambda c: c.rmse)

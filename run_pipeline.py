@@ -69,6 +69,7 @@ def main() -> None:
         if df.empty:
             logger.warning("No rows fetched for window; exiting.")
             mlflow.log_metric("rows_fetched", 0)
+            mlflow.set_tag("pipeline_outcome", "no_data_fetched")
             return
 
         # Feature engineering
@@ -87,12 +88,13 @@ def main() -> None:
 
         # --- Drift detection ---
         should_retrain = True  # Default: always retrain if no reference data
-        data_path = Path("historical_data.csv")
+        data_path = _ROOT / "historical_data.csv"
         if data_path.exists():
             ref_df = pd.read_csv(data_path)
             ref_df["timestamp"] = pd.to_datetime(ref_df["timestamp"], utc=True, errors="coerce")
             ref_df = ref_df.dropna(subset=["timestamp"]).reset_index(drop=True)
             ref_df = add_time_features(ref_df)
+            ref_df = apply_factor_columns(ref_df, result.factors)
             ref_df = one_hot_intensity_index(ref_df)
 
             numeric_feature_cols = [
@@ -123,6 +125,7 @@ def main() -> None:
 
         if not should_retrain:
             logger.info("Pipeline complete — no retraining needed.")
+            mlflow.set_tag("pipeline_outcome", "skipped_no_drift")
             return
 
         # --- AutoML retraining ---
@@ -141,10 +144,10 @@ def main() -> None:
         logger.info("Train/test rows: %s/%s", len(X_train), len(X_test))
         logger.info("Best model: %s  RMSE=%.4f", automl_result.best.name, automl_result.best.rmse)
 
-        # Register the winner
-        run_id = mlflow.active_run().info.run_id
-        version = register_model(run_id=run_id)
+        # Register the winner — use the child run's run_id where the model artifact lives
+        version = register_model(run_id=automl_result.best.run_id)
         transition_model_stage(version=version, stage="Production")
+        mlflow.set_tag("pipeline_outcome", "retrained")
         logger.info("Model v%s promoted to Production in MLflow Registry.", version)
 
 
