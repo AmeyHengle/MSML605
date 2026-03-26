@@ -35,6 +35,7 @@ config/
 # mlflow artifacts
 mlruns/
 !mlruns/.gitkeep
+mlflow.db
 
 # claude
 .claude/
@@ -42,3 +43,5 @@ CLAUDE.md
 
 # git worktrees
 .worktrees/
+
+/docs/
