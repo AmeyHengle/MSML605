@@ -24,6 +24,7 @@ if _SRC.exists() and str(_SRC) not in sys.path:
     sys.path.insert(0, str(_SRC))
 
 import mlflow
+import pandas as pd
 
 from log_tracking import setup_run_logging
 from ml605_pipeline.config import load_config_from_env
@@ -57,7 +58,6 @@ def main() -> int:
     feature_cols = load_feature_list(FEATURES_PATH)
 
     # Load reference (training) distribution
-    import pandas as pd
     ref_df = pd.read_csv(DATA_PATH)
     ref_df["timestamp"] = pd.to_datetime(ref_df["timestamp"], utc=True, errors="coerce")
     ref_df = ref_df.dropna(subset=["timestamp"]).sort_values("timestamp").reset_index(drop=True)
