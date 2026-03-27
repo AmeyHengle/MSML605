@@ -166,15 +166,17 @@ async def test_server_health_endpoint(running_server):
 @pytest.mark.integration
 async def test_client_tool_discovery(running_server):
     """MCP-03: MultiServerMCPClient can discover tools from running server via HTTP."""
-    async with MultiServerMCPClient(
+    # langchain-mcp-adapters >= 0.1.0 removed context manager support.
+    # Use the direct API: instantiate and call get_tools() without async with.
+    client = MultiServerMCPClient(
         {
             "carbon_intensity": {
                 "transport": "http",
                 "url": "http://localhost:8000/mcp",
             }
         }
-    ) as client:
-        tools = await client.get_tools()
+    )
+    tools = await client.get_tools()
     tool_names = {t.name for t in tools}
     assert "fetch_intensity" in tool_names
     assert "fetch_generation_mix" in tool_names
