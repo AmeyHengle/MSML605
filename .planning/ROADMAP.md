@@ -48,7 +48,7 @@ Plans:
 **Plans**: 3 plans
 
 Plans:
-- [ ] 02-01-PLAN.md — Install langgraph, create src/ml605_agent package, define PipelineState TypedDict, scaffold test stubs (RED)
+- [x] 02-01-PLAN.md — Install langgraph, create src/ml605_agent package, define PipelineState TypedDict, scaffold test stubs (RED)
 - [ ] 02-02-PLAN.md — Implement fetch_worker, feature_worker, test_worker, drift_worker, retrain_worker in workers.py
 - [ ] 02-03-PLAN.md — Assemble graph topology in graph.py, implement report/alert stubs, create __main__.py entry point
 
@@ -108,7 +108,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. MCP Server | 2/2 | Complete    | 2026-03-27 |
-| 2. LangGraph Agent Pipeline | 0/3 | Not started | - |
+| 2. LangGraph Agent Pipeline | 1/3 | In progress | - |
 | 3. Analysis & Explainability | 0/3 | Not started | - |
 | 4. Slack Integration | 0/2 | Not started | - |
 | 5. Docker & AWS Deployment | 0/2 | Not started | - |

@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 01-mcp-server-01-02-PLAN.md
-last_updated: "2026-03-27T19:07:38.295Z"
-last_activity: 2026-03-27 -- Plan 01-01 complete
+stopped_at: Completed 02-01-PLAN.md
+last_updated: "2026-03-29T19:17:00Z"
+last_activity: 2026-03-29 -- Plan 02-01 complete
 progress:
   total_phases: 5
   completed_phases: 1
-  total_plans: 2
-  completed_plans: 2
-  percent: 50
+  total_plans: 3
+  completed_plans: 3
+  percent: 40
 ---
 
 # Project State
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-27)
 
 **Core value:** Compress drift detection from days to hours -- agents detect, diagnose, report, and alert; humans act via Slack
-**Current focus:** Phase 1: MCP Server
+**Current focus:** Phase 2: LangGraph Agent Pipeline
 
 ## Current Position
 
-Phase: 1 of 5 (MCP Server)
-Plan: 2 of 2 in current phase (phase complete)
+Phase: 2 of 5 (LangGraph Agent Pipeline)
+Plan: 1 of 3 in current phase
 Status: Executing
-Last activity: 2026-03-27 -- Plan 01-02 complete
+Last activity: 2026-03-29 -- Plan 02-01 complete
 
-Progress: [██████████] 100% (within Phase 1)
+Progress: [████░░░░░░] 40% (within Phase 2)
 
 ## Performance Metrics
 
@@ -51,6 +51,7 @@ Progress: [██████████] 100% (within Phase 1)
 
 *Updated after each plan completion*
 | Phase 01-mcp-server P02 | 4 | 2 tasks | 2 files |
+| Phase 02-langgraph-agent-pipeline P01 | 4 | 2 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -65,6 +66,9 @@ Recent decisions affecting current work:
 - [Phase 01-mcp-server]: asyncio_mode=auto eliminates @pytest.mark.asyncio decorators; all async tests execute correctly
 - [Phase 01-mcp-server]: Used sync def for MCP tools (not async def) -- FastMCP runs sync tools in thread pool; data.py uses blocking requests library
 - [Phase 01-mcp-server]: langchain-mcp-adapters 0.2.2 requires direct API for MultiServerMCPClient (no async context manager support from >= 0.1.0)
+- [Phase 02-langgraph-agent-pipeline]: PipelineState uses TypedDict total=False so workers return partial dicts with only their output fields
+- [Phase 02-langgraph-agent-pipeline]: langgraph 1.1.3 installed -- stable release with checkpoint and prebuilt extras
+- [Phase 02-langgraph-agent-pipeline]: retrain_done bool field guards retrain path to prevent second retrain cycle in drift routing loop
 
 ### Pending Todos
 
@@ -72,12 +76,12 @@ None yet.
 
 ### Blockers/Concerns
 
-- [Pitfall 2]: Adding new dependencies (langgraph, mcp, shap, slack-bolt) may break existing 29 tests -- add incrementally and verify after each
+- [Pitfall 2]: PARTIALLY RESOLVED -- langgraph 1.1.3 added without breaking any existing tests (37 pass, 11 xfail)
 - [Pitfall 15]: RESOLVED -- run_pipeline.py has no stray breakpoint() as of plan 01-02
 - [Pitfall 4]: RESOLVED -- Streamable HTTP transport selected (mcp.run(transport="http", host="0.0.0.0", port=8000))
 
 ## Session Continuity
 
-Last session: 2026-03-27T19:07:38.291Z
-Stopped at: Completed 01-mcp-server-01-02-PLAN.md
-Resume file: None
+Last session: 2026-03-29T19:17:00Z
+Stopped at: Completed 02-01-PLAN.md
+Resume file: .planning/phases/02-langgraph-agent-pipeline/02-02-PLAN.md
