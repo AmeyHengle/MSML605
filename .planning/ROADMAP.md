@@ -45,12 +45,12 @@ Plans:
   3. The supervisor routes workers in the correct order and terminates within a bounded number of steps (no infinite loops)
   4. When drift is confirmed, the retrain worker triggers AutoML and registers the new model in MLflow
   5. Pipeline state is inspectable after completion -- every field in the shared state schema reflects what happened during the run
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
-- [ ] 02-01: TBD
-- [ ] 02-02: TBD
-- [ ] 02-03: TBD
+- [ ] 02-01-PLAN.md — Install langgraph, create src/ml605_agent package, define PipelineState TypedDict, scaffold test stubs (RED)
+- [ ] 02-02-PLAN.md — Implement fetch_worker, feature_worker, test_worker, drift_worker, retrain_worker in workers.py
+- [ ] 02-03-PLAN.md — Assemble graph topology in graph.py, implement report/alert stubs, create __main__.py entry point
 
 ### Phase 3: Analysis & Explainability
 **Goal**: Every pipeline run produces a comprehensive, human-readable analysis report with SHAP-based explainability and validated drift diagnosis
@@ -107,7 +107,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. MCP Server | 2/2 | Complete   | 2026-03-27 |
+| 1. MCP Server | 2/2 | Complete    | 2026-03-27 |
 | 2. LangGraph Agent Pipeline | 0/3 | Not started | - |
 | 3. Analysis & Explainability | 0/3 | Not started | - |
 | 4. Slack Integration | 0/2 | Not started | - |
