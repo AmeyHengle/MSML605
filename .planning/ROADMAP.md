@@ -108,7 +108,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. MCP Server | 2/2 | Complete    | 2026-03-27 |
-| 2. LangGraph Agent Pipeline | 1/3 | In progress | - |
+| 2. LangGraph Agent Pipeline | 2/3 | In Progress|  |
 | 3. Analysis & Explainability | 0/3 | Not started | - |
 | 4. Slack Integration | 0/2 | Not started | - |
 | 5. Docker & AWS Deployment | 0/2 | Not started | - |

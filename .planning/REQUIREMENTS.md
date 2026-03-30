@@ -8,12 +8,12 @@
 ### Agent Infrastructure
 
 - [ ] **AGENT-01**: System has a LangGraph supervisor agent that orchestrates all worker agents via a shared state graph
-- [ ] **AGENT-02**: Data-fetch worker agent retrieves live data via MCP server tools
-- [ ] **AGENT-03**: Model-test worker agent runs inference on fetched data and computes performance metrics
-- [ ] **AGENT-04**: Drift-check worker agent runs multi-test validation (PSI + KS + performance degradation) and returns a drift verdict
+- [x] **AGENT-02**: Data-fetch worker agent retrieves live data via MCP server tools
+- [x] **AGENT-03**: Model-test worker agent runs inference on fetched data and computes performance metrics
+- [x] **AGENT-04**: Drift-check worker agent runs multi-test validation (PSI + KS + performance degradation) and returns a drift verdict
 - [ ] **AGENT-05**: Report-gen worker agent assembles the full HTML analysis report (metrics, SHAP, drift diagnosis, model comparison, LLM summary)
 - [ ] **AGENT-06**: Alert worker agent sends Slack notifications with drift summary and report link
-- [ ] **AGENT-07**: Retrain worker agent triggers AutoML retraining and registers the new model in MLflow when drift is confirmed
+- [x] **AGENT-07**: Retrain worker agent triggers AutoML retraining and registers the new model in MLflow when drift is confirmed
 - [x] **AGENT-08**: Agents operate on a well-defined shared state schema (Pydantic model) passed through the LangGraph graph
 
 ### MCP Server
@@ -91,12 +91,12 @@
 | MCP-03 | Phase 1: MCP Server | Complete |
 | MCP-04 | Phase 1: MCP Server | Complete |
 | AGENT-01 | Phase 2: LangGraph Agent Pipeline | Pending |
-| AGENT-02 | Phase 2: LangGraph Agent Pipeline | Pending |
-| AGENT-03 | Phase 2: LangGraph Agent Pipeline | Pending |
-| AGENT-04 | Phase 2: LangGraph Agent Pipeline | Pending |
+| AGENT-02 | Phase 2: LangGraph Agent Pipeline | Complete |
+| AGENT-03 | Phase 2: LangGraph Agent Pipeline | Complete |
+| AGENT-04 | Phase 2: LangGraph Agent Pipeline | Complete |
 | AGENT-05 | Phase 2: LangGraph Agent Pipeline | Pending |
 | AGENT-06 | Phase 2: LangGraph Agent Pipeline | Pending |
-| AGENT-07 | Phase 2: LangGraph Agent Pipeline | Pending |
+| AGENT-07 | Phase 2: LangGraph Agent Pipeline | Complete |
 | AGENT-08 | Phase 2: LangGraph Agent Pipeline | Complete |
 | ANALYSIS-01 | Phase 3: Analysis & Explainability | Pending |
 | ANALYSIS-02 | Phase 3: Analysis & Explainability | Pending |

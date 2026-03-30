@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 02-01-PLAN.md
-last_updated: "2026-03-29T19:17:00Z"
-last_activity: 2026-03-29 -- Plan 02-01 complete
+stopped_at: Completed 02-02-PLAN.md
+last_updated: "2026-03-29T22:10:00Z"
+last_activity: 2026-03-29 -- Plan 02-02 complete
 progress:
   total_phases: 5
   completed_phases: 1
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-03-27)
 ## Current Position
 
 Phase: 2 of 5 (LangGraph Agent Pipeline)
-Plan: 1 of 3 in current phase
+Plan: 2 of 3 in current phase
 Status: Executing
-Last activity: 2026-03-29 -- Plan 02-01 complete
+Last activity: 2026-03-29 -- Plan 02-02 complete
 
-Progress: [████░░░░░░] 40% (within Phase 2)
+Progress: [█████░░░░░] 53% (within Phase 2)
 
 ## Performance Metrics
 
@@ -52,6 +52,7 @@ Progress: [████░░░░░░] 40% (within Phase 2)
 *Updated after each plan completion*
 | Phase 01-mcp-server P02 | 4 | 2 tasks | 2 files |
 | Phase 02-langgraph-agent-pipeline P01 | 4 | 2 tasks | 7 files |
+| Phase 02-langgraph-agent-pipeline P02 | 6 | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -69,6 +70,9 @@ Recent decisions affecting current work:
 - [Phase 02-langgraph-agent-pipeline]: PipelineState uses TypedDict total=False so workers return partial dicts with only their output fields
 - [Phase 02-langgraph-agent-pipeline]: langgraph 1.1.3 installed -- stable release with checkpoint and prebuilt extras
 - [Phase 02-langgraph-agent-pipeline]: retrain_done bool field guards retrain path to prevent second retrain cycle in drift routing loop
+- [Phase 02-langgraph-agent-pipeline]: TARGET_COL='intensity.actual' matches MCP server response; time_split inlined in retrain_worker to avoid target_col mismatch with modeling.py default
+- [Phase 02-langgraph-agent-pipeline]: drift_worker guards timestamp presence before add_time_features on reference CSV
+- [Phase 02-langgraph-agent-pipeline]: FEATURES_FILE module constant enables test monkeypatching; workers return partial dicts (only owned keys)
 
 ### Pending Todos
 
@@ -82,6 +86,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-29T19:17:00Z
-Stopped at: Completed 02-01-PLAN.md
-Resume file: .planning/phases/02-langgraph-agent-pipeline/02-02-PLAN.md
+Last session: 2026-03-29T22:10:00Z
+Stopped at: Completed 02-02-PLAN.md
+Resume file: .planning/phases/02-langgraph-agent-pipeline/02-03-PLAN.md
