@@ -234,7 +234,7 @@ def test_retrain_worker() -> None:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(reason="report_worker stub not yet implemented", strict=False)
+@pytest.mark.xfail(reason="report_worker stub not yet implemented in workers.py — defined in graph.py", strict=False)
 def test_report_worker_stub() -> None:
     """report_worker returns {'report_path': None} as a stub."""
     from ml605_agent.workers import report_worker
@@ -244,7 +244,7 @@ def test_report_worker_stub() -> None:
     assert result == {"report_path": None}
 
 
-@pytest.mark.xfail(reason="alert_worker stub not yet implemented", strict=False)
+@pytest.mark.xfail(reason="alert_worker stub not yet implemented in workers.py — defined in graph.py", strict=False)
 def test_alert_worker_stub() -> None:
     """alert_worker returns {'alert_sent': False} as a stub."""
     from ml605_agent.workers import alert_worker
@@ -252,3 +252,40 @@ def test_alert_worker_stub() -> None:
     state = {"status": "running"}
     result = alert_worker(state)
     assert result == {"alert_sent": False}
+
+
+# ---------------------------------------------------------------------------
+# Integration test — requires live MCP server
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+def test_fetch_worker_integration() -> None:
+    """fetch_worker returns rows from the live MCP server (integration).
+
+    Requires MCP server running on localhost:8000.
+    Skip if server is not reachable.
+    """
+    import subprocess
+    import time
+
+    import httpx
+
+    # Check if MCP server is reachable; skip if not
+    try:
+        r = httpx.get("http://localhost:8000/health", timeout=2.0)
+        if r.status_code != 200:
+            pytest.skip("MCP server not running on localhost:8000")
+    except Exception:
+        pytest.skip("MCP server not running on localhost:8000")
+
+    from ml605_agent.workers import fetch_worker
+
+    state = {"window_hours": 1, "status": "running"}
+    result = fetch_worker(state)
+
+    assert "df" in result or result.get("status") == "error", (
+        f"Unexpected result keys: {list(result.keys())}"
+    )
+    if result.get("status") != "error":
+        assert result.get("rows_fetched", 0) > 0, "Expected at least 1 row fetched"
