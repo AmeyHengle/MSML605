@@ -185,7 +185,9 @@ def drift_worker(state: PipelineState) -> dict:
         factors = state.get("factors", {})
 
         # Align reference data with the same feature pipeline
-        reference_df = add_time_features(reference_df)
+        # Only call add_time_features if the timestamp column is present
+        if "timestamp" in reference_df.columns:
+            reference_df = add_time_features(reference_df)
         reference_df = apply_factor_columns(reference_df, factors)
         reference_df = ensure_feature_columns(reference_df, feature_cols)
 
