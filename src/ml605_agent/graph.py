@@ -26,31 +26,25 @@ from ml605_agent.workers import (
 
 def report_worker(state: PipelineState) -> dict:
     """Phase 3 stub: log placeholder, return report_path=None."""
-    mlflow_run_id = state.get("mlflow_run_id")
-    if mlflow_run_id:
-        with mlflow.start_run(run_id=mlflow_run_id):
-            with mlflow.start_run(run_name="report_worker", nested=True):
-                mlflow.log_param("report_status", "stub_phase2")
+    if state.get("mlflow_run_id"):
+        with mlflow.start_run(run_name="report_worker", nested=True):
+            mlflow.log_param("report_status", "stub_phase2")
     return {"report_path": None}
 
 
 def alert_worker(state: PipelineState) -> dict:
     """Phase 4 stub: log placeholder, return alert_sent=False."""
-    mlflow_run_id = state.get("mlflow_run_id")
-    if mlflow_run_id:
-        with mlflow.start_run(run_id=mlflow_run_id):
-            with mlflow.start_run(run_name="alert_worker", nested=True):
-                mlflow.log_param("alert_status", "stub_phase4")
+    if state.get("mlflow_run_id"):
+        with mlflow.start_run(run_name="alert_worker", nested=True):
+            mlflow.log_param("alert_status", "stub_phase4")
     return {"alert_sent": False}
 
 
 def error_handler(state: PipelineState) -> dict:
     """Logs error to MLflow nested run and marks pipeline complete."""
-    mlflow_run_id = state.get("mlflow_run_id")
-    if mlflow_run_id:
-        with mlflow.start_run(run_id=mlflow_run_id):
-            with mlflow.start_run(run_name="error_handler", nested=True):
-                mlflow.log_param("error", state.get("error", "unknown"))
+    if state.get("mlflow_run_id"):
+        with mlflow.start_run(run_name="error_handler", nested=True):
+            mlflow.log_param("error", state.get("error", "unknown"))
     return {"status": "error"}
 
 
