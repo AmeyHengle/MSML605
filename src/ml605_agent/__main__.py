@@ -107,10 +107,7 @@ def main() -> None:
         }
         result = graph.invoke(
             initial_state,
-            config={
-                "configurable": {"thread_id": parent_run.info.run_id},
-                "recursion_limit": 25,
-            },
+            config={"recursion_limit": 25},
         )
 
     status = result.get("status", "unknown")

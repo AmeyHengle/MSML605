@@ -56,7 +56,19 @@ async def _async_fetch(window_hours: int) -> dict:
     if fetch_tool is None:
         raise RuntimeError("MCP tool 'fetch_intensity' not found on server")
 
-    result = await fetch_tool.ainvoke({"hours_back": window_hours})
+    raw = await fetch_tool.ainvoke({"hours_back": window_hours})
+
+    # langchain-mcp-adapters >= 0.2 returns a list of LangChain content blocks
+    # (response_format="content_and_artifact"), not the raw dict.  Extract the
+    # JSON text from the first TextContent block and parse it.
+    if isinstance(raw, list):
+        text = next(
+            (b["text"] for b in raw if isinstance(b, dict) and b.get("type") == "text"),
+            "{}",
+        )
+        result = json.loads(text)
+    else:
+        result = raw
 
     readings = result.get("readings", [])
     factors = result.get("factors", {})
@@ -82,9 +94,8 @@ def fetch_worker(state: PipelineState) -> dict:
 
         mlflow_run_id = state.get("mlflow_run_id")
         if mlflow_run_id:
-            with mlflow.start_run(run_id=mlflow_run_id):
-                with mlflow.start_run(run_name="fetch_worker", nested=True):
-                    mlflow.log_metric("rows_fetched", result["rows_fetched"])
+            with mlflow.start_run(run_name="fetch_worker", nested=True):
+                mlflow.log_metric("rows_fetched", result["rows_fetched"])
 
         return result
     except Exception as exc:  # noqa: BLE001
@@ -120,9 +131,8 @@ def feature_worker(state: PipelineState) -> dict:
 
         mlflow_run_id = state.get("mlflow_run_id")
         if mlflow_run_id:
-            with mlflow.start_run(run_id=mlflow_run_id):
-                with mlflow.start_run(run_name="feature_worker", nested=True):
-                    mlflow.log_param("feature_count", len(feature_cols))
+            with mlflow.start_run(run_name="feature_worker", nested=True):
+                mlflow.log_param("feature_count", len(feature_cols))
 
         return {"df_featured": df, "feature_cols": feature_cols}
     except Exception as exc:  # noqa: BLE001
@@ -153,12 +163,11 @@ def test_worker(state: PipelineState) -> dict:
 
         mlflow_run_id = state.get("mlflow_run_id")
         if mlflow_run_id:
-            with mlflow.start_run(run_id=mlflow_run_id):
-                with mlflow.start_run(run_name="test_worker", nested=True):
-                    mlflow.log_metric("rmse", eval_result.rmse)
-                    mlflow.log_metric("mae", eval_result.mae)
-                    mlflow.log_metric("r2", eval_result.r2)
-                    mlflow.log_metric("mape", eval_result.mape)
+            with mlflow.start_run(run_name="test_worker", nested=True):
+                mlflow.log_metric("rmse", eval_result.rmse)
+                mlflow.log_metric("mae", eval_result.mae)
+                mlflow.log_metric("r2", eval_result.r2)
+                mlflow.log_metric("mape", eval_result.mape)
 
         return {"eval_result": eval_result}
     except Exception as exc:  # noqa: BLE001
@@ -195,18 +204,17 @@ def drift_worker(state: PipelineState) -> dict:
 
         mlflow_run_id = state.get("mlflow_run_id")
         if mlflow_run_id:
-            with mlflow.start_run(run_id=mlflow_run_id):
-                with mlflow.start_run(run_name="drift_worker", nested=True):
-                    mlflow.log_metric("overall_drift", int(drift_report.overall_drift))
-                    mlflow.log_text(
-                        json.dumps(
-                            {
-                                "overall_drift": drift_report.overall_drift,
-                                "drifted_features": drift_report.drifted_features,
-                            }
-                        ),
-                        "drift_report.json",
-                    )
+            with mlflow.start_run(run_name="drift_worker", nested=True):
+                mlflow.log_metric("overall_drift", int(drift_report.overall_drift))
+                mlflow.log_text(
+                    json.dumps(
+                        {
+                            "overall_drift": drift_report.overall_drift,
+                            "drifted_features": drift_report.drifted_features,
+                        }
+                    ),
+                    "drift_report.json",
+                )
 
         return {"drift_report": drift_report, "overall_drift": drift_report.overall_drift}
     except Exception as exc:  # noqa: BLE001
@@ -234,13 +242,12 @@ def retrain_worker(state: PipelineState) -> dict:
         y_test = y.iloc[split_idx:]
 
         mlflow_run_id = state.get("mlflow_run_id")
-        ctx = mlflow.start_run(run_id=mlflow_run_id) if mlflow_run_id else nullcontext()
+        ctx = mlflow.start_run(run_name="retrain_worker", nested=True) if mlflow_run_id else nullcontext()
 
         with ctx:
-            with mlflow.start_run(run_name="retrain_worker", nested=bool(mlflow_run_id)):
-                automl_result = run_automl(X_train, y_train, X_test, y_test)
-                version = register_model(automl_result.best.run_id)
-                transition_model_stage(version, "Staging")
+            automl_result = run_automl(X_train, y_train, X_test, y_test)
+            version = register_model(automl_result.best.run_id)
+            transition_model_stage(version, "Staging")
 
         return {"new_model_version": version, "retrain_done": True}
     except Exception as exc:  # noqa: BLE001

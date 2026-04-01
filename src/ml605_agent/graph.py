@@ -6,7 +6,6 @@ with conditional routing for drift detection and error handling.
 from __future__ import annotations
 
 import mlflow
-from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
 
 from ml605_agent.state import PipelineState
@@ -179,4 +178,4 @@ def build_graph():
     builder.add_edge("alert_worker", END)
     builder.add_edge("error_handler", END)
 
-    return builder.compile(checkpointer=MemorySaver())
+    return builder.compile()

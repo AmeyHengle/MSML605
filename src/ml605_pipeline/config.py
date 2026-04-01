@@ -49,4 +49,3 @@ def load_config_from_env() -> PipelineConfig:
         interval_seconds=interval_seconds,
         mlflow_experiment=mlflow_experiment,
     )
-
