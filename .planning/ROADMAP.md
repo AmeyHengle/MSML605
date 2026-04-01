@@ -63,12 +63,13 @@ Plans:
   3. An HTML report is generated containing: performance metrics table, forecast vs. actual chart, SHAP summary plot, drift verdict with per-feature breakdown, and model comparison (current vs. previous)
   4. The HTML report includes a 2-3 paragraph LLM-generated plain-English summary of findings (drift diagnosis, top drifted features, retrain recommendation)
   5. The HTML report is saved as a file artifact, logged to MLflow, and its path is available in the pipeline state for downstream consumers (Slack)
-**Plans**: TBD
+**Plans**: 4 plans
 
 Plans:
-- [ ] 03-01: TBD
-- [ ] 03-02: TBD
-- [ ] 03-03: TBD
+- [ ] 03-01-PLAN.md — Install shap+groq, add reports/ to .gitignore, create Jinja2 template, write 12 failing test stubs (RED)
+- [ ] 03-02-PLAN.md — Extend drift_worker with RMSE degradation signal (3rd drift test); make 3 ANALYSIS-03 tests GREEN
+- [ ] 03-03-PLAN.md — Add SHAP computation + matplotlib chart helpers to graph.py; make 3 ANALYSIS-01/02 tests GREEN
+- [ ] 03-04-PLAN.md — Complete report_worker with Jinja2 rendering + Groq LLM summary + MLflow artifact; make all 9 test_report_worker tests GREEN
 
 ### Phase 4: Slack Integration
 **Goal**: Humans receive actionable drift alerts in Slack and can trigger pipelines, query model status, and promote models -- all without leaving the chat interface
@@ -110,6 +111,6 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5
 |-------|----------------|--------|-----------|
 | 1. MCP Server | 2/2 | Complete    | 2026-03-27 |
 | 2. LangGraph Agent Pipeline | 4/4 | Complete   | 2026-04-01 |
-| 3. Analysis & Explainability | 0/3 | Not started | - |
+| 3. Analysis & Explainability | 0/4 | Not started | - |
 | 4. Slack Integration | 0/2 | Not started | - |
 | 5. Docker & AWS Deployment | 0/2 | Not started | - |
