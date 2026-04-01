@@ -5,7 +5,20 @@ with conditional routing for drift detection and error handling.
 """
 from __future__ import annotations
 
+import matplotlib
+matplotlib.use("Agg")  # headless backend — must be set before pyplot import
+
+import base64
+import io
+import json
+import tempfile
+from contextlib import nullcontext as _nullctx
+
+import matplotlib.pyplot as plt
 import mlflow
+import numpy as np
+import pandas as pd
+import shap
 from langgraph.graph import END, START, StateGraph
 
 from ml605_agent.state import PipelineState
@@ -16,6 +29,71 @@ from ml605_agent.workers import (
     retrain_worker,
     test_worker,
 )
+
+
+# ---------------------------------------------------------------------------
+# Report generation helpers
+# ---------------------------------------------------------------------------
+
+TARGET_COL = "intensity.actual"
+
+
+def _compute_shap(model, X: pd.DataFrame, max_display: int = 10):
+    """Compute SHAP values using shap.Explainer.
+
+    Returns (shap_values Explanation, top_features list) or (None, []) if model
+    type is not supported by TreeExplainer (e.g., Ridge from AutoML fallback).
+    """
+    try:
+        explainer = shap.Explainer(model)
+        shap_values = explainer(X)
+        mean_abs = np.abs(shap_values.values).mean(axis=0)
+        top_idx = np.argsort(mean_abs)[::-1][:max_display]
+        top_features = [X.columns[i] for i in top_idx]
+        return shap_values, top_features
+    except Exception as exc:  # noqa: BLE001
+        mlflow.log_param("shap_warning", str(exc)[:200])
+        return None, []
+
+
+def _fig_to_base64(fig) -> str:
+    """Encode a matplotlib Figure as a base64 PNG string for HTML embedding."""
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png", bbox_inches="tight", dpi=100)
+    buf.seek(0)
+    encoded = base64.b64encode(buf.read()).decode("ascii")
+    plt.close(fig)
+    return encoded
+
+
+def _shap_bar_to_base64(shap_values, max_display: int = 10) -> str:
+    """Render SHAP bar plot and return as base64 PNG string."""
+    shap.plots.bar(shap_values, max_display=max_display, show=False)
+    fig = plt.gcf()
+    return _fig_to_base64(fig)
+
+
+def _forecast_chart_to_base64(df, feature_cols: list[str], model) -> str:
+    """Render forecast vs. actual chart and return as base64 PNG string.
+
+    Uses last 50 rows of df for readability. Falls back to empty string on error.
+    """
+    try:
+        X = df[feature_cols].tail(50)
+        y_true = df[TARGET_COL].tail(50).values
+        y_pred = model.predict(X)
+        fig, ax = plt.subplots(figsize=(10, 4))
+        ax.plot(range(len(y_true)), y_true, label="Actual", color="#2c5f8f", linewidth=1.5)
+        ax.plot(range(len(y_pred)), y_pred, label="Forecast", color="#e8963e",
+                linestyle="--", linewidth=1.5)
+        ax.set_xlabel("Time step (last 50)")
+        ax.set_ylabel("Carbon Intensity (gCO2/kWh)")
+        ax.set_title("Forecast vs. Actual")
+        ax.legend()
+        ax.grid(True, alpha=0.3)
+        return _fig_to_base64(fig)
+    except Exception:  # noqa: BLE001
+        return ""
 
 
 # ---------------------------------------------------------------------------

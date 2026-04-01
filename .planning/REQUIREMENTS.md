@@ -25,12 +25,12 @@
 
 ### Analysis & Explainability
 
-- [ ] **ANALYSIS-01**: SHAP `TreeExplainer` computes feature importance on the current model for each pipeline run
-- [ ] **ANALYSIS-02**: SHAP summary plot and top-N feature contributions are logged as MLflow artifacts
-- [ ] **ANALYSIS-03**: Drift validation uses at least three signals before recommending retrain: PSI threshold, KS test p-value, and model RMSE degradation percentage
-- [ ] **ANALYSIS-04**: HTML report is generated containing: performance metrics table, forecast vs. actual chart, SHAP summary plot, drift verdict with per-feature breakdown, model comparison (current vs. previous production model)
-- [ ] **ANALYSIS-05**: LLM generates a plain-English 2-3 paragraph summary of findings (drift diagnosis, top drifted features, retrain recommendation) included in the HTML report
-- [ ] **ANALYSIS-06**: HTML report is saved as a file artifact and logged to MLflow; Slack notification includes a direct link
+- [x] **ANALYSIS-01**: SHAP `TreeExplainer` computes feature importance on the current model for each pipeline run
+- [x] **ANALYSIS-02**: SHAP summary plot and top-N feature contributions are logged as MLflow artifacts
+- [x] **ANALYSIS-03**: Drift validation uses at least three signals before recommending retrain: PSI threshold, KS test p-value, and model RMSE degradation percentage
+- [x] **ANALYSIS-04**: HTML report is generated containing: performance metrics table, forecast vs. actual chart, SHAP summary plot, drift verdict with per-feature breakdown, model comparison (current vs. previous production model)
+- [x] **ANALYSIS-05**: LLM generates a plain-English 2-3 paragraph summary of findings (drift diagnosis, top drifted features, retrain recommendation) included in the HTML report
+- [x] **ANALYSIS-06**: HTML report is saved as a file artifact and logged to MLflow; Slack notification includes a direct link
 
 ### Slack Integration
 
@@ -98,12 +98,12 @@
 | AGENT-06 | Phase 2: LangGraph Agent Pipeline | Complete |
 | AGENT-07 | Phase 2: LangGraph Agent Pipeline | Complete |
 | AGENT-08 | Phase 2: LangGraph Agent Pipeline | Complete |
-| ANALYSIS-01 | Phase 3: Analysis & Explainability | Pending |
-| ANALYSIS-02 | Phase 3: Analysis & Explainability | Pending |
-| ANALYSIS-03 | Phase 3: Analysis & Explainability | Pending |
-| ANALYSIS-04 | Phase 3: Analysis & Explainability | Pending |
-| ANALYSIS-05 | Phase 3: Analysis & Explainability | Pending |
-| ANALYSIS-06 | Phase 3: Analysis & Explainability | Pending |
+| ANALYSIS-01 | Phase 3: Analysis & Explainability | Complete |
+| ANALYSIS-02 | Phase 3: Analysis & Explainability | Complete |
+| ANALYSIS-03 | Phase 3: Analysis & Explainability | Complete |
+| ANALYSIS-04 | Phase 3: Analysis & Explainability | Complete |
+| ANALYSIS-05 | Phase 3: Analysis & Explainability | Complete |
+| ANALYSIS-06 | Phase 3: Analysis & Explainability | Complete |
 | SLACK-01 | Phase 4: Slack Integration | Pending |
 | SLACK-02 | Phase 4: Slack Integration | Pending |
 | SLACK-03 | Phase 4: Slack Integration | Pending |
