@@ -13,7 +13,7 @@ This roadmap transforms the existing UK Carbon Intensity forecasting pipeline in
 Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: MCP Server** - Expose National Grid ESO API as agent-callable tools via FastMCP (completed 2026-03-27)
-- [ ] **Phase 2: LangGraph Agent Pipeline** - Supervisor + worker agents orchestrating the full pipeline via shared state graph
+- [x] **Phase 2: LangGraph Agent Pipeline** - Supervisor + worker agents orchestrating the full pipeline via shared state graph (completed 2026-04-01)
 - [ ] **Phase 3: Analysis & Explainability** - SHAP feature importance, HTML reports, LLM-generated analysis, and multi-test drift validation
 - [ ] **Phase 4: Slack Integration** - Two-way Slack bot for drift alerts, pipeline triggers, model queries, and deployment commands
 - [ ] **Phase 5: Docker & AWS Deployment** - Containerization, CI/CD pipeline, ECS Fargate deployment, and production secrets management
@@ -109,7 +109,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. MCP Server | 2/2 | Complete    | 2026-03-27 |
-| 2. LangGraph Agent Pipeline | 3/4 | In Progress|  |
+| 2. LangGraph Agent Pipeline | 4/4 | Complete   | 2026-04-01 |
 | 3. Analysis & Explainability | 0/3 | Not started | - |
 | 4. Slack Integration | 0/2 | Not started | - |
 | 5. Docker & AWS Deployment | 0/2 | Not started | - |

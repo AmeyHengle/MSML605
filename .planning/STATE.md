@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 02-03-PLAN.md
-last_updated: "2026-03-30T02:32:15.953Z"
+stopped_at: Completed 02-04-PLAN.md — Phase 2 UAT gap resolved
+last_updated: "2026-04-01T02:30:41.726Z"
 last_activity: 2026-03-30 -- Plan 02-03 complete (Phase 2 complete)
 progress:
   total_phases: 5
   completed_phases: 2
-  total_plans: 5
-  completed_plans: 5
+  total_plans: 6
+  completed_plans: 6
   percent: 100
 ---
 
@@ -54,6 +54,7 @@ Progress: [██████████] 100% (Phase 2 complete; ready for Pha
 | Phase 02-langgraph-agent-pipeline P01 | 4 | 2 tasks | 7 files |
 | Phase 02-langgraph-agent-pipeline P02 | 6 | 2 tasks | 2 files |
 | Phase 02-langgraph-agent-pipeline P03 | 10 | 2 tasks | 5 files |
+| Phase 02-langgraph-agent-pipeline P04 | 525810min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -77,6 +78,8 @@ Recent decisions affecting current work:
 - [Phase 02-langgraph-agent-pipeline]: Stub workers (report_worker, alert_worker, error_handler) defined inline in graph.py to keep workers.py focused on data-processing nodes
 - [Phase 02-langgraph-agent-pipeline]: Full-pipeline mock tests use scalar-only state dicts (no DataFrames) because MemorySaver msgpack serializer cannot serialize pandas DataFrames
 - [Phase 02-langgraph-agent-pipeline]: route_after_fetch and route_after_feature added as conditional edges to catch errors at each pipeline step
+- [Phase 02-langgraph-agent-pipeline]: Outer mlflow.start_run(run_id=...) removed from all workers — use nested=True directly while parent context is active
+- [Phase 02-langgraph-agent-pipeline]: MemorySaver removed from graph.py — stateless pipeline execution does not require checkpointing for Phase 2
 
 ### Pending Todos
 
@@ -90,6 +93,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-30T02:23:42.948Z
-Stopped at: Completed 02-03-PLAN.md
+Last session: 2026-04-01T02:30:37.314Z
+Stopped at: Completed 02-04-PLAN.md — Phase 2 UAT gap resolved
 Resume file: None
