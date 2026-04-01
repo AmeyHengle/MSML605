@@ -3,7 +3,7 @@ from __future__ import annotations
 
 
 def test_state_schema() -> None:
-    """PipelineState is a TypedDict with all 16 required fields."""
+    """PipelineState is a TypedDict with all 19 required fields."""
     from ml605_agent.state import PipelineState
 
     # TypedDict instances are plain dicts at runtime
@@ -19,6 +19,10 @@ def test_state_schema() -> None:
         "eval_result",
         "drift_report",
         "overall_drift",
+        # RMSE degradation signal fields (added in Plan 03-02)
+        "rmse_degradation_pct",
+        "rmse_degradation_fired",
+        "production_rmse",
         "retrain_done",
         "new_model_version",
         "report_path",

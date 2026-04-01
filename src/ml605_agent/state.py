@@ -33,6 +33,9 @@ class PipelineState(TypedDict, total=False):
     # drift_worker output
     drift_report: Optional[DriftReport]
     overall_drift: bool
+    rmse_degradation_pct: Optional[float]
+    rmse_degradation_fired: Optional[bool]
+    production_rmse: Optional[float]
 
     # retrain_worker output
     # retrain_done: bool — set True by retrain_worker to prevent second retrain cycle in drift routing
