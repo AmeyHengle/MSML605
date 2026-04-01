@@ -289,3 +289,21 @@ def test_fetch_worker_integration() -> None:
     )
     if result.get("status") != "error":
         assert result.get("rows_fetched", 0) > 0, "Expected at least 1 row fetched"
+
+
+# ANALYSIS-03: RMSE degradation signal
+
+
+def test_drift_worker_rmse_degradation() -> None:
+    """drift_worker sets rmse_degradation_fired=True when current RMSE exceeds production RMSE by > 20%."""
+    pytest.fail("not implemented — Plan 02 implements drift_worker RMSE signal")
+
+
+def test_drift_worker_no_production_rmse() -> None:
+    """drift_worker returns status='error' when no Production model RMSE is available in MLflow."""
+    pytest.fail("not implemented — Plan 02 implements drift_worker RMSE signal")
+
+
+def test_drift_worker_three_signals() -> None:
+    """drift_worker evaluates PSI, KS p-value, and RMSE degradation independently; overall_drift=True if any fires."""
+    pytest.fail("not implemented — Plan 02 implements drift_worker RMSE signal")
