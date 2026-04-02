@@ -29,6 +29,7 @@ from ml605_agent.workers import (
     retrain_worker,
     test_worker,
 )
+from ml605_pipeline.registry import load_production_model
 
 
 # ---------------------------------------------------------------------------
@@ -102,11 +103,61 @@ def _forecast_chart_to_base64(df, feature_cols: list[str], model) -> str:
 
 
 def report_worker(state: PipelineState) -> dict:
-    """Phase 3 stub: log placeholder, return report_path=None."""
-    if state.get("mlflow_run_id"):
-        with mlflow.start_run(run_name="report_worker", nested=True):
-            mlflow.log_param("report_status", "stub_phase2")
-    return {"report_path": None}
+    """Generate SHAP explainability, charts, HTML report, and LLM summary.
+
+    Phase 3 implementation. Replaces Phase 2 stub.
+    Returns dict with report_path (None until Plan 04), shap_top_features, and
+    intermediate chart data. Returns {"status": "error", "error": str} on failure.
+    """
+    try:
+        # -- 1. Load model for SHAP --
+        model = load_production_model()
+        if model is None:
+            return {"status": "error", "error": "No Production model available for report_worker"}
+
+        df = state.get("df_featured")
+        feature_cols = state.get("feature_cols", [])
+        if df is None or not feature_cols:
+            return {"status": "error", "error": "df_featured or feature_cols missing from state"}
+
+        X = df[feature_cols]
+
+        # -- 2. SHAP computation (with fallback for non-tree models) --
+        shap_available = False
+        shap_chart_b64 = ""
+        top_features = []
+
+        ctx = mlflow.start_run(run_name="report_worker", nested=True) if state.get("mlflow_run_id") else _nullctx()
+        with ctx:
+            shap_values, top_features = _compute_shap(model, X)
+            shap_available = shap_values is not None
+
+            if shap_available:
+                shap_chart_b64 = _shap_bar_to_base64(shap_values)
+                # Log SHAP top features as JSON artifact
+                with tempfile.NamedTemporaryFile(
+                    mode="w", suffix="_shap_top_features.json", delete=False
+                ) as f:
+                    json.dump({"top_features": top_features}, f, indent=2)
+                    shap_artifact_path = f.name
+                mlflow.log_artifact(shap_artifact_path, artifact_path="shap")
+                import os
+                os.unlink(shap_artifact_path)
+
+            # -- 3. Forecast vs. actual chart --
+            forecast_chart_b64 = _forecast_chart_to_base64(df, feature_cols, model)
+
+            # Plan 04 will complete: Jinja2 rendering + Groq + file save + log_artifact(html)
+            # Intermediate return — report_path set to None until Plan 04
+            return {
+                "report_path": None,
+                "shap_top_features": top_features,
+                "_shap_chart_b64": shap_chart_b64,
+                "_forecast_chart_b64": forecast_chart_b64,
+                "_shap_available": shap_available,
+            }
+    except Exception as exc:  # noqa: BLE001
+        return {"status": "error", "error": str(exc)}
 
 
 def alert_worker(state: PipelineState) -> dict:
