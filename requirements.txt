@@ -1,0 +1,11 @@
+# Core (no external deps for the stub implementation)
+# Uncomment as you wire in real integrations:
+
+# slack-sdk>=3.27         # SlackNotifier
+# requests>=2.31          # PagerDutyNotifier, DashboardNotifier
+# evidently>=0.4          # real drift detection in ModelMonitor
+# mlflow>=2.12            # ModelRegistry + DashboardNotifier
+# prometheus-client>=0.20 # metrics scraping in ModelMonitor
+
+# Dev / test
+pytest>=8.0
