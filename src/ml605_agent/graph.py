@@ -11,14 +11,18 @@ matplotlib.use("Agg")  # headless backend — must be set before pyplot import
 import base64
 import io
 import json
+import os
 import tempfile
 from contextlib import nullcontext as _nullctx
+from datetime import datetime
+from pathlib import Path
 
 import matplotlib.pyplot as plt
 import mlflow
 import numpy as np
 import pandas as pd
 import shap
+from jinja2 import Environment, FileSystemLoader
 from langgraph.graph import END, START, StateGraph
 
 from ml605_agent.state import PipelineState
@@ -30,6 +34,9 @@ from ml605_agent.workers import (
     test_worker,
 )
 from ml605_pipeline.registry import load_production_model
+
+TEMPLATE_DIR = Path(__file__).parent / "templates"
+REPORTS_DIR = Path("reports")
 
 
 # ---------------------------------------------------------------------------
@@ -95,6 +102,94 @@ def _forecast_chart_to_base64(df, feature_cols: list[str], model) -> str:
         return _fig_to_base64(fig)
     except Exception:  # noqa: BLE001
         return ""
+
+
+# ---------------------------------------------------------------------------
+# Report generation helpers (Jinja2 / Groq / MLflow)
+# ---------------------------------------------------------------------------
+
+
+def _fallback_summary(ctx: dict) -> str:
+    """Structured fallback when LLM is unavailable."""
+    drift_str = "detected" if ctx.get("overall_drift") else "not detected"
+    return (
+        f"<p>Pipeline completed at {ctx.get('run_timestamp', 'N/A')}. "
+        f"Drift was {drift_str}.</p>"
+        f"<p>Current RMSE: {ctx.get('rmse', 'N/A')}. "
+        f"Retrain triggered: {ctx.get('retrain_triggered', False)}.</p>"
+        f"<p>Top features: {', '.join(ctx.get('shap_top5_features', [])) or 'N/A'}.</p>"
+    )
+
+
+def _generate_llm_summary(context_payload: dict) -> str:
+    """Generate 2-3 paragraph plain-English summary via Groq. Falls back to template on failure."""
+    api_key = os.getenv("GROQ_API_KEY")
+    if not api_key:
+        return _fallback_summary(context_payload)
+    try:
+        import groq as groq_sdk  # noqa: PLC0415
+        client = groq_sdk.Groq(api_key=api_key)
+        prompt = (
+            "You are an MLOps analyst. Given the following pipeline run data as JSON, "
+            "write exactly 2-3 paragraphs covering: (1) drift diagnosis, "
+            "(2) top drifted/important features, (3) retrain recommendation.\n\n"
+            f"{json.dumps(context_payload, indent=2)}"
+        )
+        response = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.3,
+            max_completion_tokens=512,
+        )
+        return response.choices[0].message.content
+    except Exception as exc:  # noqa: BLE001
+        mlflow.log_param("llm_error", str(exc)[:200])
+        return _fallback_summary(context_payload)
+
+
+def _build_model_comparison(eval_result, new_model_version=None):
+    """Fetch previous Production model metrics from MLflow for comparison table.
+
+    Returns dict with current_rmse, current_mae, production_rmse, production_mae,
+    production_version — or None if no Production model exists.
+    """
+    from mlflow.tracking import MlflowClient  # noqa: PLC0415
+    from ml605_pipeline.registry import MODEL_NAME  # noqa: PLC0415
+    try:
+        client = MlflowClient()
+        versions = client.get_latest_versions(MODEL_NAME, stages=["Production"])
+        if not versions:
+            return None
+        run = client.get_run(versions[0].run_id)
+        return {
+            "current_rmse": eval_result.rmse,
+            "current_mae": eval_result.mae,
+            "production_rmse": run.data.metrics.get("rmse"),
+            "production_mae": run.data.metrics.get("mae"),
+            "production_version": versions[0].version,
+        }
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _render_report(context: dict) -> str:
+    """Render the Jinja2 HTML template with the given context dict."""
+    env = Environment(
+        loader=FileSystemLoader(str(TEMPLATE_DIR)),
+        autoescape=False,  # base64 data URIs must not be escaped
+    )
+    template = env.get_template("report.html.j2")
+    return template.render(**context)
+
+
+def _save_and_log_report(html_content: str) -> str:
+    """Save HTML to reports/ with timestamp and log to MLflow. Returns local file path."""
+    REPORTS_DIR.mkdir(exist_ok=True)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    report_path = REPORTS_DIR / f"pipeline_report_{timestamp}.html"
+    report_path.write_text(html_content, encoding="utf-8")
+    mlflow.log_artifact(str(report_path), artifact_path="reports")
+    return str(report_path)
 
 
 # ---------------------------------------------------------------------------
