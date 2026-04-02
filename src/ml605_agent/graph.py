@@ -198,59 +198,122 @@ def _save_and_log_report(html_content: str) -> str:
 
 
 def report_worker(state: PipelineState) -> dict:
-    """Generate SHAP explainability, charts, HTML report, and LLM summary.
+    """Generate SHAP explainability, HTML report, LLM summary, and log to MLflow.
 
-    Phase 3 implementation. Replaces Phase 2 stub.
-    Returns dict with report_path (None until Plan 04), shap_top_features, and
-    intermediate chart data. Returns {"status": "error", "error": str} on failure.
+    Returns {"report_path": str} with path to generated HTML,
+    or {"status": "error", "error": str} on fatal failure.
     """
     try:
-        # -- 1. Load model for SHAP --
+        # -- 1. Load model --
         model = load_production_model()
         if model is None:
             return {"status": "error", "error": "No Production model available for report_worker"}
 
         df = state.get("df_featured")
         feature_cols = state.get("feature_cols", [])
-        if df is None or not feature_cols:
-            return {"status": "error", "error": "df_featured or feature_cols missing from state"}
+        eval_result = state.get("eval_result")
+        drift_report = state.get("drift_report")
+
+        if df is None or not feature_cols or eval_result is None:
+            return {
+                "status": "error",
+                "error": "Required state keys missing: df_featured, feature_cols, or eval_result",
+            }
 
         X = df[feature_cols]
+        run_timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-        # -- 2. SHAP computation (with fallback for non-tree models) --
-        shap_available = False
-        shap_chart_b64 = ""
-        top_features = []
-
-        ctx = mlflow.start_run(run_name="report_worker", nested=True) if state.get("mlflow_run_id") else _nullctx()
+        ctx = (
+            mlflow.start_run(run_name="report_worker", nested=True)
+            if state.get("mlflow_run_id")
+            else _nullctx()
+        )
         with ctx:
+            # -- 2. SHAP computation --
             shap_values, top_features = _compute_shap(model, X)
             shap_available = shap_values is not None
+            shap_chart_b64 = ""
 
             if shap_available:
                 shap_chart_b64 = _shap_bar_to_base64(shap_values)
-                # Log SHAP top features as JSON artifact
+                # Log SHAP top-features JSON artifact
                 with tempfile.NamedTemporaryFile(
                     mode="w", suffix="_shap_top_features.json", delete=False
                 ) as f:
                     json.dump({"top_features": top_features}, f, indent=2)
-                    shap_artifact_path = f.name
-                mlflow.log_artifact(shap_artifact_path, artifact_path="shap")
-                import os
-                os.unlink(shap_artifact_path)
+                    shap_artifact_tmp = f.name
+                mlflow.log_artifact(shap_artifact_tmp, artifact_path="shap")
+                os.unlink(shap_artifact_tmp)
 
             # -- 3. Forecast vs. actual chart --
             forecast_chart_b64 = _forecast_chart_to_base64(df, feature_cols, model)
 
-            # Plan 04 will complete: Jinja2 rendering + Groq + file save + log_artifact(html)
-            # Intermediate return — report_path set to None until Plan 04
-            return {
-                "report_path": None,
-                "shap_top_features": top_features,
-                "_shap_chart_b64": shap_chart_b64,
-                "_forecast_chart_b64": forecast_chart_b64,
-                "_shap_available": shap_available,
+            # -- 4. Model comparison table data --
+            model_comparison = _build_model_comparison(
+                eval_result, state.get("new_model_version")
+            )
+
+            # -- 5. LLM summary --
+            shap_top5 = top_features[:5] if top_features else []
+            drifted_5 = (
+                drift_report.drifted_features[:5]
+                if drift_report and drift_report.drifted_features
+                else []
+            )
+            llm_payload = {
+                "rmse": round(eval_result.rmse, 4),
+                "mae": round(eval_result.mae, 4),
+                "r2": round(eval_result.r2, 4),
+                "overall_drift": state.get("overall_drift", False),
+                "drifted_features": drifted_5,
+                "shap_top5_features": shap_top5,
+                "retrain_triggered": state.get("retrain_done", False),
+                "new_model_version": state.get("new_model_version"),
+                "run_timestamp": run_timestamp,
             }
+            llm_summary = _generate_llm_summary(llm_payload)
+
+            # -- 6. Drift feature table for template --
+            drift_features_ctx = []
+            if drift_report and drift_report.feature_results:
+                drift_features_ctx = [
+                    {
+                        "feature": r.feature,
+                        "psi": r.psi,
+                        "ks_p_value": r.ks_p_value,
+                        "drift_detected": r.drift_detected,
+                    }
+                    for r in drift_report.feature_results
+                ]
+
+            # -- 7. Render Jinja2 template --
+            template_context = {
+                "run_timestamp": run_timestamp,
+                "mlflow_run_id": state.get("mlflow_run_id", "N/A"),
+                "status": state.get("status", "complete"),
+                "metrics": {
+                    "rmse": eval_result.rmse,
+                    "mae": eval_result.mae,
+                    "r2": eval_result.r2,
+                    "mape": eval_result.mape,
+                },
+                "forecast_chart_b64": forecast_chart_b64,
+                "shap_available": shap_available,
+                "shap_chart_b64": shap_chart_b64,
+                "overall_drift": state.get("overall_drift", False),
+                "rmse_degradation_pct": state.get("rmse_degradation_pct"),
+                "drift_features": drift_features_ctx,
+                "model_comparison": model_comparison,
+                "llm_summary": llm_summary,
+            }
+            html_content = _render_report(template_context)
+
+            # -- 8. Save HTML + log MLflow artifact --
+            report_path = _save_and_log_report(html_content)
+            mlflow.log_param("report_path", report_path)
+
+        return {"report_path": report_path, "shap_top_features": top_features}
+
     except Exception as exc:  # noqa: BLE001
         return {"status": "error", "error": str(exc)}
 
