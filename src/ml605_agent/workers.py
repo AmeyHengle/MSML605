@@ -32,7 +32,7 @@ from ml605_agent.state import PipelineState
 FEATURES_FILE = Path("features_used.txt")
 
 # Target column in the pipeline DataFrame (used by test_worker and retrain_worker)
-TARGET_COL = "intensity.actual"
+TARGET_COL = "actual_intensity"
 
 
 # ---------------------------------------------------------------------------
@@ -125,6 +125,8 @@ def feature_worker(state: PipelineState) -> dict:
             }
 
         df = state["df"].copy()
+        if "timestamp" in df.columns:
+            df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True, errors="coerce")
         df = add_time_features(df)
         df = apply_factor_columns(df, state.get("factors", {}))
         df = ensure_feature_columns(df, feature_cols)
@@ -154,7 +156,7 @@ def test_worker(state: PipelineState) -> dict:
                 "error": "No Production model registered in MLflow — run train_with_mlflow.py first",
             }
 
-        df = state["df_featured"]
+        df = state["df_featured"].dropna(subset=[TARGET_COL])
         feature_cols = state["feature_cols"]
         X = df[feature_cols]
         y_true = df[TARGET_COL].values
@@ -221,6 +223,7 @@ def drift_worker(state: PipelineState) -> dict:
         # Align reference data with the same feature pipeline
         # Only call add_time_features if the timestamp column is present
         if "timestamp" in reference_df.columns:
+            reference_df["timestamp"] = pd.to_datetime(reference_df["timestamp"], utc=True, errors="coerce")
             reference_df = add_time_features(reference_df)
         reference_df = apply_factor_columns(reference_df, factors)
         reference_df = ensure_feature_columns(reference_df, feature_cols)
@@ -277,10 +280,10 @@ def retrain_worker(state: PipelineState) -> dict:
         or {"status": "error", "error": str} on failure.
     """
     try:
-        df = state["df_featured"]
+        df = state["df_featured"].dropna(subset=[TARGET_COL])
         feature_cols = state["feature_cols"]
 
-        # time_split expects target_col; our DataFrame uses intensity.actual
+        # time_split expects target_col; our DataFrame uses actual_intensity
         split_idx = int(len(df) * 0.8)
         X = df[feature_cols].fillna(0.0)
         y = df[TARGET_COL]

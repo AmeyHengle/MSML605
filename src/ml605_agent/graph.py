@@ -43,7 +43,7 @@ REPORTS_DIR = Path("reports")
 # Report generation helpers
 # ---------------------------------------------------------------------------
 
-TARGET_COL = "intensity.actual"
+TARGET_COL = "actual_intensity"
 
 
 def _compute_shap(model, X: pd.DataFrame, max_display: int = 10):
