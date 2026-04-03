@@ -51,3 +51,9 @@ CLAUDE.md
 
 # reports (generated at runtime)
 reports/
+
+# env files
+.env
+
+#data
+data/
