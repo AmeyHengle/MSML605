@@ -1,8 +1,3 @@
-# ml-monitor
-
-A modular ML monitoring system for production models.  
-Tracks accuracy, drift, and latency — fires severity-routed alerts and auto-rollbacks on critical failures.
-
 ## Project structure
 
 ```
