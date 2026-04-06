@@ -24,7 +24,7 @@ class NumpyEncoder(json.JSONEncoder):
         if isinstance(obj, np.ndarray):  return obj.tolist()
         return super().default(obj)
 
-app = FastAPI(title='Carbon Intensity MLOps Pipeline')
+app = FastAPI(title='Carbon Intensity Forecase - MSML605 Project')
 
 # Allow the frontend (served from a different port during dev) to call the API
 app.add_middleware(
@@ -35,7 +35,7 @@ app.add_middleware(
 )
 
 # Serve frontend static files at root
-app.mount('/app', StaticFiles(directory='frontend', html=True), name='frontend')
+# app.mount('/app', StaticFiles(directory='frontend', html=True), name='frontend')
 
 # ── Shared state (single-user prototype) ─────────────────────────────────────
 _state: PipelineState = None
