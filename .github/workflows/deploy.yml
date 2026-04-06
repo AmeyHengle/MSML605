@@ -1,0 +1,41 @@
+name: Deploy
+
+on:
+  push:
+    branches:
+      - amey-demo
+
+jobs:
+
+  # ── Job 1: Deploy frontend to GitHub Pages ──────────────────────
+  deploy-frontend:
+    name: Deploy frontend → GitHub Pages
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          ref: amey-demo
+
+      - name: Deploy frontend/ to gh-pages branch
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./frontend
+          publish_branch: gh-pages
+          force_orphan: true
+
+  # ── Job 2: Trigger Render backend redeploy ──────────────────────
+  deploy-backend:
+    name: Trigger Render redeploy
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Ping Render deploy webhook
+        run: |
+          curl -s -o /dev/null -w "%{http_code}" \
+            --request POST \
+            "${{ secrets.RENDER_DEPLOY_HOOK_URL }}"
