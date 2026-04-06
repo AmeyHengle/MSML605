@@ -1,32 +1,16 @@
 # main.py
-# FastAPI backend — three routes:
-#   POST /api/initialize  → train baseline, return initial state
-#   GET  /api/simulate    → SSE stream, one event per month
-#   POST /api/reset       → clear state
-
 import asyncio
 import json
+import numpy as np
+from typing import Optional
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
-from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from pipeline import PipelineState
-from typing import Optional
-import numpy as np
 
-class NumpyEncoder(json.JSONEncoder):
-    """Converts numpy scalar types to native Python before JSON serialization."""
-    def default(self, obj):
-        if isinstance(obj, np.integer):  return int(obj)
-        if isinstance(obj, np.floating): return float(obj)
-        if isinstance(obj, np.bool_):    return bool(obj)
-        if isinstance(obj, np.ndarray):  return obj.tolist()
-        return super().default(obj)
+app = FastAPI(title='CarbonWatch MLOps')
 
-app = FastAPI(title='Carbon Intensity Forecase - MSML605 Project')
-
-# Allow the frontend (served from a different port during dev) to call the API
 app.add_middleware(
     CORSMiddleware,
     allow_origins=['*'],
@@ -34,47 +18,42 @@ app.add_middleware(
     allow_headers=['*'],
 )
 
-# Serve frontend static files at root
-# app.mount('/app', StaticFiles(directory='frontend', html=True), name='frontend')
-
-# ── Shared state (single-user prototype) ─────────────────────────────────────
-_state: PipelineState = None
-_simulation_running: bool    = False
+# ── Single-user state ─────────────────────────────────────────────────────────
+_state: Optional[PipelineState] = None
+_simulation_running: bool       = False
 
 
-# ── Request / response models ─────────────────────────────────────────────────
+class NumpyEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, np.integer):  return int(obj)
+        if isinstance(obj, np.floating): return float(obj)
+        if isinstance(obj, np.bool_):    return bool(obj)
+        if isinstance(obj, np.ndarray):  return obj.tolist()
+        return super().default(obj)
+
+
 class InitConfig(BaseModel):
     feature_x:    str   = 'gas'
     feature_y:    str   = 'forecast_intensity'
     ks_threshold: float = 0.10
     n_init:       int   = 50
     n_monthly:    int   = 5
-    speed:        float = 1.0       # seconds between SSE events
+    speed:        float = 1.0
     models_dir:   str   = 'models'
     data_path:    str   = 'data/historical_data.csv'
 
 
-# ── Routes ────────────────────────────────────────────────────────────────────
 @app.post('/api/initialize')
 async def initialize(config: InitConfig):
-    """
-    Load data, train the baseline model on month 0, return initial state.
-    Must be called before /api/simulate.
-    """
     global _state, _simulation_running
     _simulation_running = False
-    _state = PipelineState(config.model_dump())
-    payload = _state.initialize()
+    _state   = PipelineState(config.model_dump())
+    payload  = _state.initialize()
     return {'status': 'ok', 'data': payload}
 
 
 @app.get('/api/simulate')
 async def simulate(request: Request):
-    """
-    SSE stream — advances the pipeline one month per event.
-    Each event is a JSON object (see pipeline.PipelineState.tick).
-    The stream ends when all months are processed or the client disconnects.
-    """
     global _simulation_running
 
     if _state is None:
@@ -87,7 +66,6 @@ async def simulate(request: Request):
         _simulation_running = True
         try:
             while True:
-                # Check for client disconnect
                 if await request.is_disconnected():
                     break
 
@@ -104,7 +82,6 @@ async def simulate(request: Request):
 
                 yield f'data: {json.dumps(payload, cls=NumpyEncoder)}\n\n'
 
-                # Respect done flag without waiting another sleep cycle
                 if payload.get('done'):
                     break
 
@@ -120,7 +97,7 @@ async def simulate(request: Request):
         media_type='text/event-stream',
         headers={
             'Cache-Control':               'no-cache',
-            'X-Accel-Buffering':           'no',    # important for nginx proxies
+            'X-Accel-Buffering':           'no',
             'Access-Control-Allow-Origin': '*',
         }
     )

@@ -1,163 +1,158 @@
-// app.js — CarbonWatch MLOps frontend
-// Communicates with FastAPI backend via REST + SSE (EventSource).
-
-// const API = 'http://localhost:8000';
-// const API = 'https://msml605-backend.onrender.com';
+// app.js — CarbonWatch MLOps
 const API = 'https://msml605.onrender.com';
 
-// ── State ─────────────────────────────────────────────────────────────────────
+// ── Global state ──────────────────────────────────────────────────────────────
 let evtSource   = null;
 let initialized = false;
 let simRunning  = false;
 let logCount    = 0;
 
-let scatterPC1 = [], scatterY = [];
-let ksHistory  = [], ksMonths  = [];
 let kdeStore   = {};
 let kdeFeature = 'gas';
-let axisRanges = null;
-let threshold  = 0.10;
+let ksHistory  = [];
+let ksMonths   = [];
 
-// ── DOM ───────────────────────────────────────────────────────────────────────
-const btnInit  = document.getElementById('btn-init');
-const btnSim   = document.getElementById('btn-simulate');
-const btnPause = document.getElementById('btn-pause');
-const btnReset = document.getElementById('btn-reset');
-const cfgSpeed = document.getElementById('cfg-speed');
+// Fixed axis ranges — set once from /api/initialize, never changed again
+let PC1_RANGE       = null;
+let INTENSITY_RANGE = null;
+let KS_THRESHOLD    = 0.10;
+
+// ── DOM refs ──────────────────────────────────────────────────────────────────
+const btnInit     = document.getElementById('btn-init');
+const btnSim      = document.getElementById('btn-simulate');
+const btnPause    = document.getElementById('btn-pause');
+const btnReset    = document.getElementById('btn-reset');
+const cfgSpeed    = document.getElementById('cfg-speed');
+const cfgSpeedVal = document.getElementById('cfg-speed-val');
+const themeToggle = document.getElementById('theme-toggle');
+const themeIcon   = document.getElementById('theme-icon');
 
 cfgSpeed.addEventListener('input', () => {
-  document.getElementById('cfg-speed-val').textContent =
-    parseFloat(cfgSpeed.value).toFixed(1) + 's';
+  cfgSpeedVal.textContent = parseFloat(cfgSpeed.value).toFixed(1) + 's';
 });
 
-// ── Theme toggle ──────────────────────────────────────────────────────────────
-document.getElementById('theme-toggle').addEventListener('click', () => {
+// ── Theme ─────────────────────────────────────────────────────────────────────
+themeToggle.addEventListener('click', () => {
   const html   = document.documentElement;
   const isDark = html.getAttribute('data-theme') === 'dark';
   html.setAttribute('data-theme', isDark ? 'light' : 'dark');
-  document.getElementById('theme-icon').textContent = isDark ? '☾' : '☀';
-  if (initialized) relayoutAllPlots();
+  themeIcon.textContent = isDark ? '☽' : '☀';
+  reapplyPlotlyTheme();
 });
 
-function getPlotColors() {
+function plotlyTheme() {
   const dark = document.documentElement.getAttribute('data-theme') === 'dark';
   return {
-    grid: dark ? '#1e2233' : '#e5e7ef',
-    text: dark ? '#6b7394' : '#8890aa',
+    paper: 'rgba(0,0,0,0)',
+    plot:  'rgba(0,0,0,0)',
+    grid:  dark ? '#1e2233' : '#e5e7ef',
+    text:  dark ? '#6b7394' : '#8890aa',
   };
 }
 
-function relayoutAllPlots() {
-  const c      = getPlotColors();
-  const layout = {
-    paper_bgcolor: 'rgba(0,0,0,0)', plot_bgcolor: 'rgba(0,0,0,0)',
-    'xaxis.gridcolor': c.grid, 'xaxis.color': c.text,
-    'yaxis.gridcolor': c.grid, 'yaxis.color': c.text,
-    'font.color': c.text,
+function reapplyPlotlyTheme() {
+  const t = plotlyTheme();
+  const u = {
+    paper_bgcolor: t.paper, plot_bgcolor: t.plot, 'font.color': t.text,
+    'xaxis.gridcolor': t.grid, 'xaxis.color': t.text,
+    'yaxis.gridcolor': t.grid, 'yaxis.color': t.text,
   };
-  ['plot-scatter', 'plot-pva', 'plot-kde', 'plot-ks'].forEach(id => {
-    try { Plotly.relayout(id, layout); } catch(e) {}
+  ['plot-pca', 'plot-pred', 'plot-kde', 'plot-ks'].forEach(id => {
+    try { Plotly.relayout(id, u); } catch (_) {}
   });
 }
 
-// ── Plotly layout factory ─────────────────────────────────────────────────────
-function mkLayout(xLabel, yLabel, extra = {}) {
-  const c = getPlotColors();
+// ── Plotly layout helper ──────────────────────────────────────────────────────
+function makeLayout(xLabel, yLabel, xrange, yrange, extra) {
+  const t = plotlyTheme();
   return {
-    paper_bgcolor: 'rgba(0,0,0,0)',
-    plot_bgcolor:  'rgba(0,0,0,0)',
-    font:   { family: "'DM Mono', monospace", color: c.text, size: 10 },
+    paper_bgcolor: t.paper,
+    plot_bgcolor:  t.plot,
+    font:   { family: "'DM Mono', monospace", color: t.text, size: 10 },
     xaxis:  { title: { text: xLabel, font: { size: 10 } },
-               gridcolor: c.grid, zeroline: false, color: c.text },
+               gridcolor: t.grid, zeroline: false, color: t.text,
+               range: xrange || null },
     yaxis:  { title: { text: yLabel, font: { size: 10 } },
-               gridcolor: c.grid, zeroline: false, color: c.text },
-    margin:     { l: 50, r: 12, t: 10, b: 40 },
+               gridcolor: t.grid, zeroline: false, color: t.text,
+               range: yrange || null },
+    margin: { l: 52, r: 16, t: 12, b: 44 },
     showlegend: true,
-    legend:     { bgcolor: 'rgba(0,0,0,0)', font: { size: 9 }, x: 0, y: 1 },
-    ...extra
+    legend: { bgcolor: 'rgba(0,0,0,0)', font: { size: 9 }, x: 0, y: 1 },
+    ...(extra || {}),
   };
 }
 
-const plotCfg = { displayModeBar: false, responsive: true };
+const CFG = { displayModeBar: false, responsive: true };
 
 // ── PCA scatter ───────────────────────────────────────────────────────────────
-function initScatterPlot(initPC1, initY, linePC1, lineY) {
-  scatterPC1 = [...initPC1];
-  scatterY   = [...initY];
-  Plotly.newPlot('plot-scatter', [
-    { x: scatterPC1, y: scatterY,
-      mode: 'markers', type: 'scatter', name: 'Samples',
+function initPcaPlot(pca_x, pca_y, line_pc1, line_y) {
+  Plotly.newPlot('plot-pca', [
+    {
+      x: pca_x, y: pca_y, mode: 'markers', type: 'scatter', name: 'Samples',
       marker: { color: '#4C72B0', size: 5, opacity: 0.75,
-                line: { color: '#fff', width: 0.4 } } },
-    { x: linePC1, y: lineY,
-      mode: 'lines', type: 'scatter', name: 'Fit (v1)',
-      line: { color: '#e05252', width: 2.2 } },
-  ], mkLayout('PC1 — grid energy mix', 'Forecast intensity (gCO₂/kWh)', {
-    xaxis: { range: [axisRanges.pc1_min, axisRanges.pc1_max],
-             gridcolor: getPlotColors().grid, zeroline: false,
-             color: getPlotColors().text,
-             title: { text: 'PC1 — grid energy mix', font: { size: 10 } } },
-    yaxis: { range: [axisRanges.y_min, axisRanges.y_max],
-             gridcolor: getPlotColors().grid, zeroline: false,
-             color: getPlotColors().text,
-             title: { text: 'Forecast intensity (gCO₂/kWh)', font: { size: 10 } } },
-  }), plotCfg);
+                line: { color: '#fff', width: 0.4 } },
+    },
+    {
+      x: line_pc1, y: line_y, mode: 'lines', type: 'scatter', name: 'Model fit',
+      line: { color: '#e05252', width: 2.2 },
+    },
+  ],
+  makeLayout('PC1 (energy mix)', 'Intensity (gCO₂/kWh)', PC1_RANGE, INTENSITY_RANGE),
+  CFG);
 }
 
-function updateScatterPoints(newPC1, newY) {
-  scatterPC1 = scatterPC1.concat(newPC1);
-  scatterY   = scatterY.concat(newY);
-  Plotly.extendTraces('plot-scatter', { x: [newPC1], y: [newY] }, [0]);
+function updatePcaPoints(pca_x, pca_y) {
+  Plotly.extendTraces('plot-pca', { x: [pca_x], y: [pca_y] }, [0]);
 }
 
-function updateRegressionLine(linePC1, lineY, version) {
-  Plotly.restyle('plot-scatter',
-    { x: [linePC1], y: [lineY], name: [`Fit (v${version})`] }, [1]);
+function updatePcaLine(line_pc1, line_y) {
+  Plotly.restyle('plot-pca', { x: [line_pc1], y: [line_y] }, [1]);
 }
 
 // ── Predicted vs Actual ───────────────────────────────────────────────────────
-function initPvaPlot(predY, actualY) {
-  const diag = [axisRanges.y_min, axisRanges.y_max];
-  Plotly.newPlot('plot-pva', [
-    { x: diag, y: diag,
-      mode: 'lines', type: 'scatter', name: 'Ideal (perfect model)',
-      line: { color: '#3ecf8e', width: 1.5, dash: 'dot' } },
-    { x: predY, y: actualY,
-      mode: 'markers', type: 'scatter', name: 'Current period',
-      marker: { color: '#F0997B', size: 4, opacity: 0.65,
-                line: { color: '#D85A30', width: 0.4 } } },
-  ], mkLayout('Predicted (gCO₂/kWh)', 'Actual (gCO₂/kWh)', {
-    xaxis: { range: diag, gridcolor: getPlotColors().grid,
-             zeroline: false, color: getPlotColors().text,
-             title: { text: 'Predicted (gCO₂/kWh)', font: { size: 10 } } },
-    yaxis: { range: diag, gridcolor: getPlotColors().grid,
-             zeroline: false, color: getPlotColors().text,
-             title: { text: 'Actual (gCO₂/kWh)', font: { size: 10 } } },
-  }), plotCfg);
+function initPredPlot(pred_x, actual_y) {
+  const lo = INTENSITY_RANGE[0], hi = INTENSITY_RANGE[1];
+  Plotly.newPlot('plot-pred', [
+    {
+      x: pred_x, y: actual_y, mode: 'markers', type: 'scatter', name: 'Samples',
+      marker: { color: '#5b8fff', size: 5, opacity: 0.75,
+                line: { color: '#fff', width: 0.4 } },
+    },
+    {
+      x: [lo, hi], y: [lo, hi], mode: 'lines', type: 'scatter',
+      name: 'Ideal (y = x)', line: { color: '#3ecf8e', width: 1.8, dash: 'dot' },
+    },
+  ],
+  makeLayout('Predicted (gCO₂/kWh)', 'Actual (gCO₂/kWh)', INTENSITY_RANGE, INTENSITY_RANGE),
+  CFG);
 }
 
-function updatePvaPoints(predY, actualY) {
-  Plotly.restyle('plot-pva', { x: [predY], y: [actualY] }, [1]);
+function updatePredPoints(pred_x, actual_y) {
+  Plotly.extendTraces('plot-pred', { x: [pred_x], y: [actual_y] }, [0]);
 }
 
 // ── KDE ───────────────────────────────────────────────────────────────────────
 function initKdePlot() {
   Plotly.newPlot('plot-kde', [
-    { x: [], y: [], mode: 'lines', type: 'scatter', name: 'Reference',
+    {
+      x: [], y: [], mode: 'lines', type: 'scatter', name: 'Reference',
       fill: 'tozeroy', fillcolor: 'rgba(91,143,255,0.15)',
-      line: { color: '#5b8fff', width: 2 } },
-    { x: [], y: [], mode: 'lines', type: 'scatter', name: 'Current',
+      line: { color: '#5b8fff', width: 2 },
+    },
+    {
+      x: [], y: [], mode: 'lines', type: 'scatter', name: 'Current',
       fill: 'tozeroy', fillcolor: 'rgba(224,82,82,0.12)',
-      line: { color: '#e05252', width: 2 } },
-  ], mkLayout('Feature value (%)', 'Density'), plotCfg);
+      line: { color: '#e05252', width: 2 },
+    },
+  ],
+  makeLayout('Feature value (%)', 'Density', null, null),
+  CFG);
 }
 
 function updateKdePlot(feat) {
   const d = kdeStore[feat];
   if (!d) return;
-  Plotly.restyle('plot-kde', {
-    x: [d.ref_x, d.cur_x], y: [d.ref_y, d.cur_y],
-  }, [0, 1]);
+  Plotly.restyle('plot-kde', { x: [d.ref_x, d.cur_x], y: [d.ref_y, d.cur_y] }, [0, 1]);
 }
 
 document.getElementById('kde-feature-select').addEventListener('change', e => {
@@ -167,14 +162,24 @@ document.getElementById('kde-feature-select').addEventListener('change', e => {
 
 // ── KS sparkline ──────────────────────────────────────────────────────────────
 function initKsPlot() {
+  const t = plotlyTheme();
   Plotly.newPlot('plot-ks', [
-    { x: [], y: [], mode: 'lines+markers', type: 'scatter', name: 'KS',
-      line: { color: '#5b8fff', width: 1.5 },
-      marker: { size: 4, color: '#5b8fff' } },
-    { x: [], y: [threshold, threshold], mode: 'lines', type: 'scatter',
-      name: 'Threshold', line: { color: '#e05252', width: 1, dash: 'dot' } },
-  ], { ...mkLayout('Month', 'KS'), showlegend: false,
-       margin: { l: 36, r: 8, t: 6, b: 28 } }, plotCfg);
+    {
+      x: [], y: [], mode: 'lines+markers', type: 'scatter',
+      line: { color: '#5b8fff', width: 1.5 }, marker: { size: 4, color: '#5b8fff' },
+    },
+    {
+      x: [], y: [KS_THRESHOLD, KS_THRESHOLD], mode: 'lines', type: 'scatter',
+      line: { color: '#e05252', width: 1, dash: 'dot' },
+    },
+  ], {
+    paper_bgcolor: t.paper, plot_bgcolor: t.plot,
+    font: { family: "'DM Mono', monospace", color: t.text, size: 9 },
+    xaxis: { gridcolor: t.grid, zeroline: false, color: t.text },
+    yaxis: { gridcolor: t.grid, zeroline: false, color: t.text },
+    margin: { l: 36, r: 8, t: 6, b: 28 },
+    showlegend: false,
+  }, CFG);
 }
 
 function updateKsSpark(month, ksVal) {
@@ -183,7 +188,7 @@ function updateKsSpark(month, ksVal) {
   Plotly.restyle('plot-ks', { x: [ksMonths], y: [ksHistory] }, [0]);
   Plotly.restyle('plot-ks', {
     x: [[ksMonths[0], ksMonths[ksMonths.length - 1]]],
-    y: [[threshold, threshold]],
+    y: [[KS_THRESHOLD, KS_THRESHOLD]],
   }, [1]);
 }
 
@@ -195,11 +200,11 @@ function updatePills(pills) {
 }
 
 // ── Log ───────────────────────────────────────────────────────────────────────
-function addLog(msg, type = 'ok') {
+function addLog(msg, type) {
   logCount++;
   const body  = document.getElementById('log-body');
   const entry = document.createElement('div');
-  entry.className = `log-entry log-entry--${type}`;
+  entry.className = `log-entry log-entry--${type || 'ok'}`;
   const ts = new Date().toLocaleTimeString('en-GB', { hour12: false });
   entry.innerHTML = `<span class="log-ts">${ts}</span>${msg}`;
   body.appendChild(entry);
@@ -207,7 +212,7 @@ function addLog(msg, type = 'ok') {
   document.getElementById('log-count').textContent = `${logCount} events`;
 }
 
-// ── Header & dashboard ────────────────────────────────────────────────────────
+// ── Header / dashboard ────────────────────────────────────────────────────────
 function updateHeader(month, idx, total, status) {
   document.getElementById('hdr-month').textContent    = month;
   document.getElementById('hdr-progress').textContent = `${idx} / ${total}`;
@@ -215,37 +220,41 @@ function updateHeader(month, idx, total, status) {
 }
 
 function updateDash(d) {
-  document.getElementById('m-r2').textContent   = d.r2    ?? '—';
-  document.getElementById('m-rmse').textContent = d.rmse  ?? '—';
-  document.getElementById('m-ks').textContent   = d.ks_stat ?? '—';
-  document.getElementById('m-psi').textContent  = d.psi   ?? '—';
-  document.getElementById('m-version').textContent = d.model_version ?? '—';
-  if (d.retrained || d.model_version === 1) {
-    document.getElementById('m-retrain').textContent = d.month ?? '—';
+  const set = (id, v) => { document.getElementById(id).textContent = v ?? '—'; };
+  set('m-r2',   d.r2   != null ? d.r2.toFixed(4)   : null);
+  set('m-rmse', d.rmse != null ? d.rmse.toFixed(2)  : null);
+  set('m-ks',   d.ks_stat != null ? d.ks_stat.toFixed(4) : null);
+  set('m-psi',  d.psi  != null ? d.psi.toFixed(4)   : null);
+  set('m-version', d.model_version ? `v${d.model_version}` : null);
+  if (d.retrained || d.month_idx === 0) {
+    set('m-retrain', d.month);
     document.getElementById('version-badge').textContent = `v ${d.model_version}`;
   }
 }
 
-function flashDrift(panelId) {
-  const el = document.getElementById(panelId);
+// ── Flash ─────────────────────────────────────────────────────────────────────
+function flashDrift(id) {
+  const el = document.getElementById(id);
+  if (!el) return;
   el.classList.add('drift-flash');
   setTimeout(() => el.classList.remove('drift-flash'), 2200);
 }
 
-// ── Initialize ────────────────────────────────────────────────────────────────
+// ── INITIALIZE ────────────────────────────────────────────────────────────────
 btnInit.addEventListener('click', async () => {
   btnInit.disabled = true;
   addLog('Initializing pipeline…', 'idle');
   updateHeader('—', 0, '—', 'INITIALIZING');
-  threshold = parseFloat(document.getElementById('cfg-threshold').value);
+
+  KS_THRESHOLD = parseFloat(document.getElementById('cfg-threshold').value);
 
   const config = {
     feature_x:    document.getElementById('cfg-feature-x').value,
     feature_y:    'forecast_intensity',
-    ks_threshold: threshold,
+    ks_threshold: KS_THRESHOLD,
     n_init:       parseInt(document.getElementById('cfg-n-init').value),
     n_monthly:    parseInt(document.getElementById('cfg-n-monthly').value),
-    speed:        parseFloat(cfgSpeed.value),
+    speed:        parseFloat(document.getElementById('cfg-speed').value),
   };
 
   try {
@@ -254,26 +263,47 @@ btnInit.addEventListener('click', async () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(config),
     });
+
+    if (!res.ok) {
+      throw new Error(`Server returned ${res.status}: ${await res.text()}`);
+    }
+
     const json = await res.json();
     const d    = json.data;
 
-    axisRanges = d.axis_ranges;
+    // Validate that the backend returned the expected fields
+    if (!d || !d.pc1_range || !d.intensity_range) {
+      throw new Error(
+        `Backend missing required fields. Got keys: ${Object.keys(d || {}).join(', ')}`
+      );
+    }
 
-    initScatterPlot(d.scatter_pc1, d.scatter_y, d.line_pc1, d.line_y);
-    initPvaPlot(d.pred_y, d.actual_y);
+    // Lock in global axis ranges
+    PC1_RANGE       = d.pc1_range;
+    INTENSITY_RANGE = d.intensity_range;
+
+    // Boot all four plots
+    initPcaPlot(d.pca_x, d.pca_y, d.line_pc1, d.line_y);
+    initPredPlot(d.pred_x, d.actual_y);
     initKdePlot();
     initKsPlot();
 
+    // Seed KDE store
     kdeStore[config.feature_x] = {
       ref_x: d.kde_x, ref_y: d.kde_ref_y,
       cur_x: d.kde_x, cur_y: d.kde_ref_y,
     };
     updateKdePlot(kdeFeature);
 
-    updateDash({ ...d, retrained: true });
+    updateDash({ ...d, retrained: false, month_idx: 0 });
     updateHeader(d.month, 1, d.total_months, 'READY');
-    addLog(`Baseline model trained  |  ${d.month}  |  R²=${d.r2}  RMSE=${d.rmse}`, 'retrain');
 
+    addLog(
+      `Baseline model trained on ${d.month}  |  R²=${d.r2}  RMSE=${d.rmse}`,
+      'retrain'
+    );
+
+    // Lock controls during simulation
     document.querySelectorAll('.ctrl-group select, .ctrl-group input')
             .forEach(el => { el.disabled = true; });
 
@@ -287,7 +317,7 @@ btnInit.addEventListener('click', async () => {
   }
 });
 
-// ── Simulate ──────────────────────────────────────────────────────────────────
+// ── SIMULATE ──────────────────────────────────────────────────────────────────
 btnSim.addEventListener('click', () => {
   if (!initialized) return;
   btnSim.disabled   = true;
@@ -299,6 +329,7 @@ btnSim.addEventListener('click', () => {
 
   evtSource.onmessage = (e) => {
     const d = JSON.parse(e.data);
+
     if (d.error)  { addLog(d.error, 'drift'); evtSource.close(); return; }
     if (d.paused) return;
     if (d.done && !d.month) {
@@ -307,37 +338,48 @@ btnSim.addEventListener('click', () => {
       evtSource.close(); btnPause.disabled = true; return;
     }
 
+    // Header
     updateHeader(d.month, d.month_idx + 1, d.total_months, 'RUNNING');
-    updateScatterPoints(d.new_scatter_pc1, d.new_scatter_y);
 
-    if (d.retrained && d.new_line)
-      updateRegressionLine(d.new_line.line_pc1, d.new_line.line_y, d.model_version);
+    // Scatter: add new points every tick
+    updatePcaPoints(d.pca_x, d.pca_y);
+    updatePredPoints(d.pred_x, d.actual_y);
 
-    updatePvaPoints(d.pred_y, d.actual_y);
+    // Regression line: only update on retrain
+    if (d.retrained && d.new_line) {
+      updatePcaLine(d.new_line.line_pc1, d.new_line.line_y);
+    }
 
-    const primaryFeat = document.getElementById('cfg-feature-x').value;
-    kdeStore[primaryFeat] = {
+    // KDE
+    const feat = document.getElementById('cfg-feature-x').value;
+    kdeStore[feat] = {
       ref_x: d.kde_ref_x, ref_y: d.kde_ref_y,
       cur_x: d.kde_cur_x, cur_y: d.kde_cur_y,
     };
-    if (kdeFeature === primaryFeat) updateKdePlot(kdeFeature);
+    if (kdeFeature === feat) updateKdePlot(kdeFeature);
 
+    // KS sparkline
     updateKsSpark(d.month, d.ks_stat);
-    if (d.drift_pills) updatePills(d.drift_pills);
 
-    const pillEl = document.getElementById('pill-drift');
+    // Pills + dashboard
+    if (d.drift_pills) updatePills(d.drift_pills);
+    updateDash(d);
+
+    // Drift indicators
     if (d.drift_detected) {
-      flashDrift('panel-scatter'); flashDrift('panel-pva'); flashDrift('panel-kde');
-      pillEl.className   = 'pill drifting';
-      pillEl.textContent = `DRIFT: ${d.ks_stat}`;
+      flashDrift('panel-pca');
+      flashDrift('panel-kde');
+      flashDrift('panel-pred');
+      document.getElementById('pill-drift').className   = 'pill drifting';
+      document.getElementById('pill-drift').textContent = `DRIFT: ${d.ks_stat}`;
     } else {
-      pillEl.className   = 'pill ok';
-      pillEl.textContent = `KS: ${d.ks_stat}`;
+      document.getElementById('pill-drift').className   = 'pill ok';
+      document.getElementById('pill-drift').textContent = `KS: ${d.ks_stat}`;
     }
 
-    updateDash(d);
-    addLog(`[${d.month}]  ${d.log}`,
-           d.retrained ? 'retrain' : d.drift_detected ? 'drift' : 'ok');
+    // Log
+    const logType = d.retrained ? 'retrain' : d.drift_detected ? 'drift' : 'ok';
+    addLog(`[${d.month}]  ${d.log}`, logType);
 
     if (d.done) {
       addLog('All months processed — simulation complete.', 'done');
@@ -353,52 +395,53 @@ btnSim.addEventListener('click', () => {
   };
 });
 
-// ── Pause / Resume ────────────────────────────────────────────────────────────
+// ── PAUSE / RESUME ────────────────────────────────────────────────────────────
 btnPause.addEventListener('click', async () => {
   if (simRunning) {
     await fetch(`${API}/api/pause`, { method: 'POST' });
     btnPause.textContent = '▶ Resume';
     simRunning = false;
-    addLog('Paused.', 'idle');
+    document.getElementById('hdr-status').textContent = 'PAUSED';
+    addLog('Simulation paused.', 'idle');
   } else {
     await fetch(`${API}/api/resume`, { method: 'POST' });
     btnPause.textContent = '⏸ Pause';
     simRunning = true;
-    addLog('Resumed.', 'ok');
+    document.getElementById('hdr-status').textContent = 'RUNNING';
+    addLog('Simulation resumed.', 'ok');
   }
 });
 
-// ── Reset ─────────────────────────────────────────────────────────────────────
+// ── RESET ─────────────────────────────────────────────────────────────────────
 btnReset.addEventListener('click', async () => {
   if (evtSource) { evtSource.close(); evtSource = null; }
   await fetch(`${API}/api/reset`, { method: 'POST' });
 
   initialized = false; simRunning = false; logCount = 0;
-  scatterPC1 = []; scatterY = []; ksHistory = []; ksMonths = [];
-  kdeStore = {}; axisRanges = null;
+  ksHistory = []; ksMonths = []; kdeStore = {};
+  PC1_RANGE = null; INTENSITY_RANGE = null;
 
-  ['plot-scatter', 'plot-pva', 'plot-kde', 'plot-ks'].forEach(id => {
-    try { Plotly.purge(id); } catch(e) {}
-  });
+  ['plot-pca', 'plot-pred', 'plot-kde', 'plot-ks'].forEach(id => Plotly.purge(id));
 
   document.getElementById('log-body').innerHTML =
     '<div class="log-entry log-entry--idle">Awaiting initialization…</div>';
   document.getElementById('log-count').textContent = '0 events';
+  document.querySelectorAll('.feat-pill').forEach(el => el.className = 'feat-pill none');
   updateHeader('—', 0, '—', 'IDLE');
-
   document.getElementById('pill-drift').className   = 'pill';
   document.getElementById('pill-drift').textContent = 'DRIFT: —';
   document.getElementById('version-badge').textContent = 'v —';
   ['m-r2','m-rmse','m-ks','m-psi','m-retrain','m-version'].forEach(id => {
     document.getElementById(id).textContent = '—';
   });
-  document.querySelectorAll('.feat-pill').forEach(el => { el.className = 'feat-pill none'; });
-  document.querySelectorAll('.ctrl-group select, .ctrl-group input').forEach(el => {
-    el.disabled = false;
-  });
 
-  btnInit.disabled = false; btnSim.disabled = true;
-  btnPause.disabled = true; btnReset.disabled = true;
+  document.querySelectorAll('.ctrl-group select, .ctrl-group input')
+          .forEach(el => { el.disabled = false; });
+
+  btnInit.disabled  = false;
+  btnSim.disabled   = true;
+  btnPause.disabled = true;
+  btnReset.disabled = true;
   btnPause.textContent = '⏸ Pause';
   addLog('Pipeline reset.', 'idle');
 });

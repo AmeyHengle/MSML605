@@ -30,13 +30,12 @@
   </div>
   <div class="topbar-right">
     <div class="pill" id="pill-drift">DRIFT: —</div>
-    <button class="theme-toggle" id="theme-toggle" title="Toggle light/dark">
+    <button class="theme-toggle" id="theme-toggle" title="Toggle light / dark">
       <span id="theme-icon">☀</span>
     </button>
   </div>
 </header>
 
-<!-- ── Controls bar ──────────────────────────────────────────────────── -->
 <section class="controls-bar">
   <div class="ctrl-group">
     <label>KDE Feature</label>
@@ -77,14 +76,12 @@
   </div>
 </section>
 
-<!-- ── Main grid ──────────────────────────────────────────────────────── -->
 <main class="grid">
 
-  <!-- ── LEFT COLUMN: three stacked panels ──────────────────────────── -->
+  <!-- ── LEFT: three stacked panels ───────────────────────────────── -->
   <div class="col-left">
 
-    <!-- 1. PCA Projection -->
-    <div class="panel">
+    <div class="panel" id="panel-pca">
       <div class="panel-header">
         <span class="panel-title">PCA PROJECTION</span>
         <span class="panel-sub">PC1 (all 9 features) → forecast intensity</span>
@@ -92,7 +89,6 @@
       <div id="plot-pca" class="plot-area"></div>
     </div>
 
-    <!-- 2. Distribution Shift -->
     <div class="panel" id="panel-kde">
       <div class="panel-header">
         <span class="panel-title">DISTRIBUTION SHIFT</span>
@@ -124,8 +120,7 @@
       </div>
     </div>
 
-    <!-- 3. Predicted vs Actual -->
-    <div class="panel">
+    <div class="panel" id="panel-pred">
       <div class="panel-header">
         <span class="panel-title">PREDICTED VS ACTUAL</span>
         <span class="panel-sub">points on the diagonal = perfect model</span>
@@ -133,13 +128,12 @@
       <div id="plot-pred" class="plot-area"></div>
     </div>
 
-  </div><!-- /col-left -->
+  </div>
 
-  <!-- ── RIGHT COLUMN ────────────────────────────────────────────────── -->
+  <!-- ── RIGHT: dashboard + log ────────────────────────────────────── -->
   <div class="col-right">
 
-    <!-- Model dashboard -->
-    <div class="panel" id="panel-model">
+    <div class="panel">
       <div class="panel-header">
         <span class="panel-title">MODEL DASHBOARD</span>
         <span class="version-badge" id="version-badge">v —</span>
@@ -180,7 +174,6 @@
       <div id="plot-ks" class="plot-area plot-area--mini"></div>
     </div>
 
-    <!-- Pipeline log -->
     <div class="panel panel--log">
       <div class="panel-header">
         <span class="panel-title">PIPELINE LOG</span>
@@ -191,7 +184,7 @@
       </div>
     </div>
 
-  </div><!-- /col-right -->
+  </div>
 
 </main>
 
