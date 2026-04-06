@@ -2,7 +2,6 @@
 // Communicates with FastAPI backend via REST + SSE (EventSource).
 
 // const API = 'http://localhost:8000';
-// const API = 'https://msml605-backend.onrender.com';
 const API = 'https://msml605.onrender.com';
 
 // ── State ─────────────────────────────────────────────────────────────────────
