@@ -35,10 +35,10 @@ class NumpyEncoder(json.JSONEncoder):
 class InitConfig(BaseModel):
     feature_x:    str   = 'gas'
     feature_y:    str   = 'forecast_intensity'
-    ks_threshold: float = 0.10
-    n_init:       int   = 50
-    n_monthly:    int   = 5
-    speed:        float = 1.0
+    ks_threshold: float = 0.3
+    n_init:       int   = 100
+    n_monthly:    int   = 50
+    speed:        float = 0.2
     models_dir:   str   = 'models'
     data_path:    str   = 'data/historical_data.csv'
 
