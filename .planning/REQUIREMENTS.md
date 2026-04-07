@@ -34,11 +34,11 @@
 
 ### Slack Integration
 
-- [ ] **SLACK-01**: Slack bot sends a structured Block Kit message when drift is detected, containing: drift verdict, top drifted features, SHAP top-3 features, and a link to the full HTML report
-- [ ] **SLACK-02**: Slack bot sends a pipeline completion summary (no drift case): metrics, model RMSE, forecast summary
-- [ ] **SLACK-03**: User can trigger a pipeline run from Slack via slash command or @-mention
-- [ ] **SLACK-04**: User can query the current model's status (RMSE, last run timestamp, model version) from Slack
-- [ ] **SLACK-05**: User can trigger model deployment (promote retrained model to production) from Slack
+- [x] **SLACK-01**: Slack bot sends a structured Block Kit message when drift is detected, containing: drift verdict, top drifted features, SHAP top-3 features, and a link to the full HTML report
+- [x] **SLACK-02**: Slack bot sends a pipeline completion summary (no drift case): metrics, model RMSE, forecast summary
+- [x] **SLACK-03**: User can trigger a pipeline run from Slack via slash command or @-mention
+- [x] **SLACK-04**: User can query the current model's status (RMSE, last run timestamp, model version) from Slack
+- [x] **SLACK-05**: User can trigger model deployment (promote retrained model to production) from Slack
 
 ### Deployment
 
@@ -104,11 +104,11 @@
 | ANALYSIS-04 | Phase 3: Analysis & Explainability | Complete |
 | ANALYSIS-05 | Phase 3: Analysis & Explainability | Complete |
 | ANALYSIS-06 | Phase 3: Analysis & Explainability | Complete |
-| SLACK-01 | Phase 4: Slack Integration | Pending |
-| SLACK-02 | Phase 4: Slack Integration | Pending |
-| SLACK-03 | Phase 4: Slack Integration | Pending |
-| SLACK-04 | Phase 4: Slack Integration | Pending |
-| SLACK-05 | Phase 4: Slack Integration | Pending |
+| SLACK-01 | Phase 4: Slack Integration | Complete |
+| SLACK-02 | Phase 4: Slack Integration | Complete |
+| SLACK-03 | Phase 4: Slack Integration | Complete |
+| SLACK-04 | Phase 4: Slack Integration | Complete |
+| SLACK-05 | Phase 4: Slack Integration | Complete |
 | DEPLOY-01 | Phase 5: Docker & AWS Deployment | Pending |
 | DEPLOY-02 | Phase 5: Docker & AWS Deployment | Pending |
 | DEPLOY-03 | Phase 5: Docker & AWS Deployment | Pending |
