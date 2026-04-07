@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 04-01-PLAN.md — scaffold ml605_slack, install slack-bolt, fix PipelineState, create 29 RED test stubs
-last_updated: "2026-04-07T19:24:09.546Z"
+stopped_at: Completed 04-02-PLAN.md — Block Kit builders + slash commands; 16 tests GREEN
+last_updated: "2026-04-07T19:27:27.436Z"
 last_activity: 2026-04-07
 progress:
   total_phases: 5
   completed_phases: 3
   total_plans: 14
-  completed_plans: 11
+  completed_plans: 12
   percent: 70
 ---
 
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-03-27)
 ## Current Position
 
 Phase: 04 (slack-integration) — EXECUTING
-Plan: 2 of 4
+Plan: 3 of 4
 Status: Ready to execute
 Last activity: 2026-04-07
 
@@ -61,6 +61,7 @@ Progress: [███████░░░] 70% (7 of 10 plans complete)
 | Phase 03-analysis-explainability P02 | 7 | 2 tasks | 4 files |
 | Phase 03-analysis-explainability P04 | 15min | 2 tasks | 3 files |
 | Phase 04-slack-integration P01 | 9min | 2 tasks | 11 files |
+| Phase 04-slack-integration P02 | 12 | 2 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -95,6 +96,9 @@ Recent decisions affecting current work:
 - [Phase 04-slack-integration]: slack-bolt 1.28.0 installed (satisfies >=1.27.0); slack-sdk 3.41.0 as transitive dependency
 - [Phase 04-slack-integration]: PipelineState shap_top_features and hitl_decision fields added early to fix Pitfall 3 (LangGraph silent key drop)
 - [Phase 04-slack-integration]: TDD RED stubs use pytest.fail() (not xfail) so failure is visible; test_agent_state.py updated for 21 fields
+- [Phase 04-slack-integration]: handle_ml605_command is module-level (not nested in create_app) to enable direct import and testing without mocking full Bolt App lifecycle
+- [Phase 04-slack-integration]: PipelineState extended with shap_top_features and hitl_decision fields to support Phase 4 HITL flow and alert_worker SHAP access
+- [Phase 04-slack-integration]: daemon=True on background threads ensures process exits cleanly if bot shuts down
 
 ### Pending Todos
 
@@ -114,6 +118,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-04-07T19:24:09.539Z
-Stopped at: Completed 04-01-PLAN.md — scaffold ml605_slack, install slack-bolt, fix PipelineState, create 29 RED test stubs
+Last session: 2026-04-07T19:27:27.429Z
+Stopped at: Completed 04-02-PLAN.md — Block Kit builders + slash commands; 16 tests GREEN
 Resume file: None
