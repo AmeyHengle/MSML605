@@ -29,6 +29,7 @@ def test_graph_compiles() -> None:
         "drift_worker",
         "retrain_worker",
         "report_worker",
+        "hitl_decision_node",
         "alert_worker",
         "error_handler",
     }
@@ -50,15 +51,16 @@ def test_routing_no_drift() -> None:
 
 
 def test_routing_with_drift() -> None:
-    """route_after_drift returns 'retrain_worker' when overall_drift=True and retrain_done=False."""
+    """route_after_drift returns 'report_worker' when drift=True (HITL node decides retrain)."""
     from ml605_agent.graph import route_after_drift
 
+    # Phase 4: route_after_drift always goes to report_worker (HITL decides retrain)
     result = route_after_drift({"status": "running", "overall_drift": True, "retrain_done": False})
-    assert result == "retrain_worker"
+    assert result == "report_worker"
 
 
 def test_routing_retrain_done() -> None:
-    """route_after_drift returns 'report_worker' when retrain_done=True (prevents second retrain)."""
+    """route_after_drift returns 'report_worker' when retrain_done=True."""
     from ml605_agent.graph import route_after_drift
 
     result = route_after_drift({"status": "running", "overall_drift": True, "retrain_done": True})
@@ -121,6 +123,8 @@ def test_full_pipeline_no_drift(monkeypatch) -> None:
         lambda s: {"drift_report": None, "overall_drift": False},
     )
     monkeypatch.setattr(graph_module, "report_worker", lambda s: {"report_path": None})
+    # Mock hitl_decision_node to skip interrupt (no checkpointer in these tests)
+    monkeypatch.setattr(graph_module, "hitl_decision_node", lambda s: {"hitl_decision": "no_drift"})
     monkeypatch.setattr(
         graph_module,
         "alert_worker",
@@ -136,10 +140,10 @@ def test_full_pipeline_no_drift(monkeypatch) -> None:
 
 
 def test_full_pipeline_with_drift(monkeypatch) -> None:
-    """Graph run with overall_drift=True triggers retrain path; retrain_done=True in final state.
+    """Graph run with overall_drift=True, HITL approve, triggers retrain; retrain_done=True in final state.
 
-    Note: Workers are mocked to return only scalar/primitive state values to avoid
-    DataFrame serialization issues with the MemorySaver checkpointer.
+    Note: Workers are mocked to return only scalar/primitive state values.
+    hitl_decision_node is mocked to return 'approve' (simulating human approval).
     """
     from ml605_agent import graph as graph_module
     from ml605_agent.graph import build_graph
@@ -151,11 +155,20 @@ def test_full_pipeline_with_drift(monkeypatch) -> None:
         return {"eval_result": None}
 
     def fake_drift_worker(s):
-        # First pass: drift detected; after retrain retrain_done is True so route to report
+        # Always reports drift (retrain_done guards the loop via route_after_retrain + hitl)
         return {"drift_report": None, "overall_drift": True}
 
     def fake_retrain_worker(s):
         return {"new_model_version": "2", "retrain_done": True}
+
+    hitl_call_count = {"n": 0}
+
+    def fake_hitl(s):
+        hitl_call_count["n"] += 1
+        # First time: approve retrain; second time (after retrain loop): no_drift
+        if s.get("retrain_done"):
+            return {"hitl_decision": "no_drift"}
+        return {"hitl_decision": "approve"}
 
     monkeypatch.setattr(
         graph_module,
@@ -171,6 +184,7 @@ def test_full_pipeline_with_drift(monkeypatch) -> None:
     monkeypatch.setattr(graph_module, "drift_worker", fake_drift_worker)
     monkeypatch.setattr(graph_module, "retrain_worker", fake_retrain_worker)
     monkeypatch.setattr(graph_module, "report_worker", lambda s: {"report_path": None})
+    monkeypatch.setattr(graph_module, "hitl_decision_node", fake_hitl)
     monkeypatch.setattr(
         graph_module,
         "alert_worker",
