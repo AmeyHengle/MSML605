@@ -89,7 +89,7 @@ Plans:
 Plans:
 - [x] 04-01-PLAN.md — Install slack-bolt, scaffold src/ml605_slack package, fix PipelineState (add shap_top_features + hitl_decision), create RED test stubs for all 8 requirements
 - [x] 04-02-PLAN.md — Implement Block Kit builders (blocks.py) and all 6 slash command handlers (bot.py) with __main__.py entry point
-- [ ] 04-03-PLAN.md — Add hitl_decision_node with interrupt() to graph, replace alert_worker stub with real Slack posting, wire button handlers + HITL timeout
+- [x] 04-03-PLAN.md — Add hitl_decision_node with interrupt() to graph, replace alert_worker stub with real Slack posting, wire button handlers + HITL timeout
 - [ ] 04-04-PLAN.md — Update .env.example and CLAUDE.md with Slack docs, full test suite validation and requirement coverage audit
 
 ### Phase 5: Docker & AWS Deployment
@@ -117,5 +117,5 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5
 | 1. MCP Server | 2/2 | Complete    | 2026-03-27 |
 | 2. LangGraph Agent Pipeline | 4/4 | Complete   | 2026-04-01 |
 | 3. Analysis & Explainability | 4/4 | Complete   | 2026-04-02 |
-| 4. Slack Integration | 2/4 | In Progress|  |
+| 4. Slack Integration | 3/4 | In Progress|  |
 | 5. Docker & AWS Deployment | 0/2 | Not started | - |

@@ -52,9 +52,9 @@
 
 ### Human-in-the-Loop Approval
 
-- **HITL-01**: Slack sends interactive Block Kit message with Approve/Reject buttons when retrain is recommended
-- **HITL-02**: LangGraph `interrupt()` pauses graph execution pending human Slack response before retraining starts
-- **HITL-03**: Human approval/rejection is logged to MLflow with timestamp (MTTA tracking)
+- [x] **HITL-01**: Slack sends interactive Block Kit message with Approve/Reject buttons when retrain is recommended
+- [x] **HITL-02**: LangGraph `interrupt()` pauses graph execution pending human Slack response before retraining starts
+- [x] **HITL-03**: Human approval/rejection is logged to MLflow with timestamp (MTTA tracking)
 
 ### Smart Retraining
 
