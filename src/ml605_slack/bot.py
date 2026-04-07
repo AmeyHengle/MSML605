@@ -3,6 +3,8 @@
 Per D-01: Socket Mode via slack-bolt.
 Per D-02: Library is slack-bolt (not raw slack-sdk).
 Per D-03: /ml605 run uses ack + background thread pattern.
+Per D-08: HITL button handlers resume paused LangGraph via Command(resume=...).
+Per D-09: Auto-reject timeout via threading.Timer.
 """
 from __future__ import annotations
 
@@ -14,9 +16,66 @@ import mlflow
 from mlflow.tracking import MlflowClient
 from slack_bolt import App
 from slack_bolt.adapter.socket_mode import SocketModeHandler
+from langgraph.checkpoint.memory import MemorySaver
+from langgraph.types import Command
 
 from ml605_slack.blocks import build_drift_alert_blocks, build_no_drift_blocks
 from ml605_pipeline.registry import MODEL_NAME, transition_model_stage
+
+
+# ---------------------------------------------------------------------------
+# Module-level shared graph instance (with MemorySaver for HITL)
+# ---------------------------------------------------------------------------
+
+_graph_instance = None
+_graph_checkpointer = None
+_graph_lock = threading.Lock()
+
+
+def _get_or_create_graph():
+    """Get or create the shared graph instance with MemorySaver checkpointer.
+
+    Thread-safe: uses lock to prevent race condition on initialization.
+    """
+    global _graph_instance, _graph_checkpointer
+    with _graph_lock:
+        if _graph_instance is None:
+            from ml605_agent.graph import build_graph  # noqa: PLC0415
+            _graph_checkpointer = MemorySaver()
+            _graph_instance = build_graph(checkpointer=_graph_checkpointer)
+    return _graph_instance
+
+
+def start_hitl_timeout(thread_id: str, channel_id: str, timeout_minutes: int, client) -> dict:
+    """Start a timer that auto-rejects if no human response within timeout_minutes (per D-09).
+
+    Returns the pending_hitl dict entry for tracking.
+    """
+    def on_timeout():
+        try:
+            graph = _get_or_create_graph()
+            config = {"configurable": {"thread_id": thread_id}}
+            graph.invoke(Command(resume="reject_timeout"), config=config)
+            client.chat_postMessage(
+                channel=channel_id,
+                text=(
+                    f":warning: No response received within {timeout_minutes} minutes "
+                    "— retrain rejected automatically."
+                ),
+            )
+        except Exception as exc:  # noqa: BLE001
+            try:
+                client.chat_postMessage(
+                    channel=channel_id,
+                    text=f":x: HITL timeout error: {exc}",
+                )
+            except Exception:  # noqa: BLE001
+                pass
+
+    timer = threading.Timer(timeout_minutes * 60, on_timeout)
+    timer.daemon = True
+    timer.start()
+    return {"timer": timer, "channel": channel_id}
 
 
 def _get_latest_report_path() -> str | None:
@@ -274,4 +333,72 @@ def create_app() -> App:
     """
     app = App(token=os.environ.get("SLACK_BOT_TOKEN", "xoxb-placeholder"))
     app.command("/ml605")(handle_ml605_command)
+
+    # --- HITL Button Handlers (per D-08, D-09) ---
+
+    # Pending HITL decisions: thread_id -> {"timer": Timer, "channel": str}
+    _pending_hitl: dict[str, dict] = {}
+
+    @app.action("approve_retrain")
+    def handle_approve(ack, body, client):
+        """Resume graph with 'approve' decision (per HITL-01)."""
+        ack()
+        try:
+            thread_id = body["actions"][0]["value"]
+            channel_id = body["channel"]["id"]
+
+            # Cancel timeout timer if pending
+            if thread_id in _pending_hitl:
+                _pending_hitl[thread_id]["timer"].cancel()
+                del _pending_hitl[thread_id]
+
+            # Resume graph with approve decision
+            graph = _get_or_create_graph()
+            config = {"configurable": {"thread_id": thread_id}}
+            graph.invoke(Command(resume="approve"), config=config)
+
+            client.chat_postMessage(
+                channel=channel_id,
+                text=":white_check_mark: Retrain approved. Pipeline continuing...",
+            )
+        except Exception as exc:  # noqa: BLE001
+            try:
+                client.chat_postMessage(
+                    channel=body.get("channel", {}).get("id", ""),
+                    text=f":x: Error resuming pipeline: {exc}",
+                )
+            except Exception:  # noqa: BLE001
+                pass
+
+    @app.action("reject_retrain")
+    def handle_reject(ack, body, client):
+        """Resume graph with 'reject' decision (per HITL-01)."""
+        ack()
+        try:
+            thread_id = body["actions"][0]["value"]
+            channel_id = body["channel"]["id"]
+
+            # Cancel timeout timer if pending
+            if thread_id in _pending_hitl:
+                _pending_hitl[thread_id]["timer"].cancel()
+                del _pending_hitl[thread_id]
+
+            # Resume graph with reject decision
+            graph = _get_or_create_graph()
+            config = {"configurable": {"thread_id": thread_id}}
+            graph.invoke(Command(resume="reject"), config=config)
+
+            client.chat_postMessage(
+                channel=channel_id,
+                text=":no_entry_sign: Retrain rejected. Pipeline completing without retraining.",
+            )
+        except Exception as exc:  # noqa: BLE001
+            try:
+                client.chat_postMessage(
+                    channel=body.get("channel", {}).get("id", ""),
+                    text=f":x: Error resuming pipeline: {exc}",
+                )
+            except Exception:  # noqa: BLE001
+                pass
+
     return app

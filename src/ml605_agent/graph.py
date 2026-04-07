@@ -322,11 +322,99 @@ def report_worker(state: PipelineState) -> dict:
 
 
 def alert_worker(state: PipelineState) -> dict:
-    """Phase 4 stub: log placeholder, return alert_sent=False."""
-    if state.get("mlflow_run_id"):
-        with mlflow.start_run(run_name="alert_worker", nested=True):
-            mlflow.log_param("alert_status", "stub_phase4")
-    return {"alert_sent": False}
+    """Post pipeline results to Slack (per D-06, D-07, D-10).
+
+    Reads SLACK_BOT_TOKEN and SLACK_CHANNEL_ID from env.
+    Posts drift alert or no-drift summary Block Kit message.
+    Uploads HTML report via files_upload_v2.
+    Returns {"alert_sent": True} on success, {"alert_sent": False} if no token.
+    """
+    from ml605_slack.blocks import build_drift_alert_blocks, build_no_drift_blocks  # noqa: PLC0415
+
+    slack_token = os.getenv("SLACK_BOT_TOKEN")
+    channel_id = os.getenv("SLACK_CHANNEL_ID", "")
+
+    if not slack_token or not channel_id:
+        # Graceful degradation: no Slack posting if tokens not configured
+        if state.get("mlflow_run_id"):
+            with mlflow.start_run(run_name="alert_worker", nested=True):
+                mlflow.log_param("alert_status", "skipped_no_slack_token")
+        return {"alert_sent": False}
+
+    try:
+        from slack_sdk import WebClient  # noqa: PLC0415
+        client = WebClient(token=slack_token)
+
+        eval_result = state.get("eval_result")
+        eval_dict = eval_result.__dict__ if eval_result is not None else {}
+
+        if state.get("overall_drift"):
+            drift_report = state.get("drift_report")
+            drifted = []
+            if drift_report is not None and hasattr(drift_report, "feature_results"):
+                drifted = [
+                    {"feature": r.feature, "psi": r.psi}
+                    for r in drift_report.feature_results[:3]
+                    if r.drift_detected
+                ]
+            blocks = build_drift_alert_blocks(
+                overall_drift=True,
+                drifted_features=drifted,
+                shap_top_features=state.get("shap_top_features", []),
+                eval_result_dict=eval_dict,
+                thread_id=f"pipeline-{state.get('mlflow_run_id', 'unknown')}",
+            )
+        else:
+            # Get production model version for no-drift summary
+            from mlflow.tracking import MlflowClient as _MlflowClient  # noqa: PLC0415
+            from ml605_pipeline.registry import MODEL_NAME as _MODEL_NAME  # noqa: PLC0415
+            try:
+                _client = _MlflowClient()
+                versions = _client.get_latest_versions(_MODEL_NAME, stages=["Production"])
+                prod_version = versions[0].version if versions else "unknown"
+            except Exception:  # noqa: BLE001
+                prod_version = "unknown"
+
+            blocks = build_no_drift_blocks(
+                eval_result_dict=eval_dict,
+                production_version=prod_version,
+            )
+
+        client.chat_postMessage(
+            channel=channel_id,
+            blocks=blocks,
+            text="Pipeline alert",
+        )
+
+        # Upload HTML report (per D-04)
+        report_path = state.get("report_path")
+        if report_path and Path(report_path).exists():
+            client.files_upload_v2(
+                channel=channel_id,
+                file=report_path,
+                title="Pipeline Report",
+                filename=Path(report_path).name,
+            )
+
+        if state.get("mlflow_run_id"):
+            with mlflow.start_run(run_name="alert_worker", nested=True):
+                mlflow.log_param("alert_status", "sent")
+                mlflow.log_param("alert_channel", channel_id)
+
+        return {"alert_sent": True}
+
+    except Exception as exc:  # noqa: BLE001
+        # Per D-10: post error to Slack channel if possible
+        try:
+            from slack_sdk import WebClient as _WC  # noqa: PLC0415
+            err_client = _WC(token=slack_token)
+            err_client.chat_postMessage(
+                channel=channel_id,
+                text=f":x: Alert worker error: {exc}",
+            )
+        except Exception:  # noqa: BLE001
+            pass
+        return {"alert_sent": False}
 
 
 def error_handler(state: PipelineState) -> dict:
