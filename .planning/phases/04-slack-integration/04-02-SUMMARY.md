@@ -137,6 +137,17 @@ None — all builder functions fully implemented with real Block Kit JSON. Comma
 - `PipelineState.hitl_decision` field is declared for HITL node output (Plan 04-03)
 - Outstanding: alert_worker implementation (currently stub in workers.py) — Plan 04-03
 
+## Self-Check: PASSED
+
+- FOUND: src/ml605_slack/__init__.py
+- FOUND: src/ml605_slack/blocks.py
+- FOUND: src/ml605_slack/bot.py
+- FOUND: src/ml605_slack/__main__.py
+- FOUND: tests/test_slack_blocks.py
+- FOUND: tests/test_slack_commands.py
+- FOUND: commit b629fcd (Task 1 - blocks + blocks tests)
+- FOUND: commit f0c77e6 (Task 2 - bot, __main__, commands tests)
+
 ---
 *Phase: 04-slack-integration*
 *Completed: 2026-04-07*
