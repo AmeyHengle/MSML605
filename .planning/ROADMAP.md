@@ -15,7 +15,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 1: MCP Server** - Expose National Grid ESO API as agent-callable tools via FastMCP (completed 2026-03-27)
 - [x] **Phase 2: LangGraph Agent Pipeline** - Supervisor + worker agents orchestrating the full pipeline via shared state graph (completed 2026-04-01)
 - [x] **Phase 3: Analysis & Explainability** - SHAP feature importance, HTML reports, LLM-generated analysis, and multi-test drift validation (completed 2026-04-02)
-- [ ] **Phase 4: Slack Integration** - Two-way Slack bot for drift alerts, pipeline triggers, model queries, and deployment commands
+- [ ] **Phase 4: Slack Integration** - Two-way Slack bot for drift alerts, pipeline triggers, model queries, HITL approval, and deployment commands
 - [ ] **Phase 5: Docker & AWS Deployment** - Containerization, CI/CD pipeline, ECS Fargate deployment, and production secrets management
 
 ## Phase Details
@@ -72,20 +72,25 @@ Plans:
 - [ ] 03-04-PLAN.md — Complete report_worker with Jinja2 rendering + Groq LLM summary + MLflow artifact; make all 9 test_report_worker tests GREEN
 
 ### Phase 4: Slack Integration
-**Goal**: Humans receive actionable drift alerts in Slack and can trigger pipelines, query model status, and promote models -- all without leaving the chat interface
+**Goal**: Humans receive actionable drift alerts in Slack and can trigger pipelines, query model status, and promote models -- all without leaving the chat interface. Includes HITL approve/reject flow for retrain decisions.
 **Depends on**: Phase 3
-**Requirements**: SLACK-01, SLACK-02, SLACK-03, SLACK-04, SLACK-05
+**Requirements**: SLACK-01, SLACK-02, SLACK-03, SLACK-04, SLACK-05, HITL-01, HITL-02, HITL-03
 **Success Criteria** (what must be TRUE):
   1. When drift is detected, a Block Kit message posts to Slack containing: drift verdict, top drifted features, SHAP top-3 features, and a link to the full HTML report
   2. When no drift is detected, a pipeline completion summary posts to Slack with key metrics (RMSE, forecast summary)
   3. A user can trigger a full pipeline run from Slack via slash command or @-mention, and receive the results in the same channel
   4. A user can query the current model's status (RMSE, last run timestamp, model version) from Slack and receive a structured response
   5. A user can trigger model deployment (promote retrained model to production) from Slack
-**Plans**: TBD
+  6. Drift alerts include interactive Approve/Reject buttons for HITL retrain approval
+  7. LangGraph interrupt() pauses graph execution pending human Slack response before retraining starts
+  8. Human approval/rejection is logged to MLflow with timestamp (MTTA tracking)
+**Plans**: 4 plans
 
 Plans:
-- [ ] 04-01: TBD
-- [ ] 04-02: TBD
+- [ ] 04-01-PLAN.md — Install slack-bolt, scaffold src/ml605_slack package, fix PipelineState (add shap_top_features + hitl_decision), create RED test stubs for all 8 requirements
+- [ ] 04-02-PLAN.md — Implement Block Kit builders (blocks.py) and all 6 slash command handlers (bot.py) with __main__.py entry point
+- [ ] 04-03-PLAN.md — Add hitl_decision_node with interrupt() to graph, replace alert_worker stub with real Slack posting, wire button handlers + HITL timeout
+- [ ] 04-04-PLAN.md — Update .env.example and CLAUDE.md with Slack docs, full test suite validation and requirement coverage audit
 
 ### Phase 5: Docker & AWS Deployment
 **Goal**: The entire system runs in containers locally and deploys to AWS ECS Fargate via GitHub Actions with proper secrets management
@@ -112,5 +117,5 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5
 | 1. MCP Server | 2/2 | Complete    | 2026-03-27 |
 | 2. LangGraph Agent Pipeline | 4/4 | Complete   | 2026-04-01 |
 | 3. Analysis & Explainability | 4/4 | Complete   | 2026-04-02 |
-| 4. Slack Integration | 0/2 | Not started | - |
+| 4. Slack Integration | 0/4 | Not started | - |
 | 5. Docker & AWS Deployment | 0/2 | Not started | - |
