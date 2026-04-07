@@ -42,9 +42,15 @@ class PipelineState(TypedDict, total=False):
     retrain_done: bool
     new_model_version: Optional[str]
 
-    # stub outputs (Phase 2: None)
+    # report_worker output (Phase 3)
     report_path: Optional[str]
+    shap_top_features: Optional[list[str]]
+
+    # alert_worker output
     alert_sent: Optional[bool]
+
+    # HITL output (Phase 4)
+    hitl_decision: Optional[str]
 
     # cross-cutting
     mlflow_run_id: Optional[str]

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 
 def test_state_schema() -> None:
-    """PipelineState is a TypedDict with all 19 required fields."""
+    """PipelineState is a TypedDict with all 21 required fields."""
     from ml605_agent.state import PipelineState
 
     # TypedDict instances are plain dicts at runtime
@@ -26,7 +26,11 @@ def test_state_schema() -> None:
         "retrain_done",
         "new_model_version",
         "report_path",
+        # SHAP top features (added in Plan 04-01, Pitfall 3 fix)
+        "shap_top_features",
         "alert_sent",
+        # HITL decision field (added in Plan 04-01)
+        "hitl_decision",
         "mlflow_run_id",
         "status",
         "error",
