@@ -26,10 +26,9 @@ def test_state_schema() -> None:
         "retrain_done",
         "new_model_version",
         "report_path",
-        # SHAP top features (added in Plan 04-01, Pitfall 3 fix)
+        # Slack/HITL fields (added in Plan 04-01)
         "shap_top_features",
         "alert_sent",
-        # HITL decision field (added in Plan 04-01)
         "hitl_decision",
         "mlflow_run_id",
         "status",
