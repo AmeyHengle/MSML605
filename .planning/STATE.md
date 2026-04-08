@@ -109,7 +109,11 @@ Recent decisions affecting current work:
 
 ### Pending Todos
 
-None yet.
+3 pending — /gsd:check-todos to review
+
+- [2026-04-08] Baseline training pipeline without MLflow or AutoML (area: general)
+- [2026-04-08] CI/CD automation and vulnerability check with AI agents (area: tooling)
+- [2026-04-08] Continuous drift monitoring automated solution (area: general)
 
 ### Quick Tasks Completed
 
