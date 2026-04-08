@@ -17,6 +17,24 @@ These failures existed before Plan 04-01 execution and are NOT caused by changes
 - **Impact:** Does not affect the current plan's deliverables
 - **Suggested fix:** To be investigated in a future quick task or Phase 04 bug fix
 
+### 3. test_agent_workers.py::test_retrain_worker (discovered during 04-04)
+- **Status:** Pre-existing failure (confirmed present before 04-04 changes)
+- **Error:** `['actual_intensity'] not in DataFrame` — workers.py TARGET_COL="actual_intensity" but test fixture uses "intensity.actual"  
+- **Cause:** workers.py was changed to use "actual_intensity" in fix(03-uat) but test_agent_workers.py was not updated to match
+- **Impact:** Does not affect Slack/HITL functionality or Phase 4 deliverables
+- **Suggested fix:** Update test fixture data["intensity.actual"] to data["actual_intensity"] in tests/test_agent_workers.py line 207
+
+### 4. test_mcp.py failures (4 tests, discovered during 04-04)
+- **Status:** Pre-existing failures (MCP server connectivity tests)
+- **Error:** Async test framework issues + server not running
+- **Impact:** Does not affect Phase 4 deliverables
+- **Suggested fix:** Investigate asyncio_mode config or test_mcp.py fixture issues in Phase 5
+
+### 5. test_report_helpers.py::test_forecast_chart_returns_nonempty_string (04-04 scan)
+- **Status:** Pre-existing failure
+- **Error:** Empty string returned from forecast_chart function
+- **Impact:** Does not affect Phase 4 deliverables
+
 ## Items Deferred to Future Plans
 
 - Block Kit implementation (blocks.py stubs → Plan 04-02)
