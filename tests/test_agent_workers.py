@@ -27,7 +27,7 @@ def test_fetch_worker() -> None:
     fake_tool = MagicMock()
     fake_tool.ainvoke = AsyncMock(
         return_value={
-            "readings": [{"from": "2024-01-01T00:00Z", "intensity.actual": 150}],
+            "readings": [{"from": "2024-01-01T00:00Z", "actual_intensity": 150}],
             "factors": {"gas": 0.394},
         }
     )
@@ -59,7 +59,7 @@ def _minimal_intensity_df() -> pd.DataFrame:
     return pd.DataFrame(
         {
             "timestamp": pd.to_datetime(["2024-01-01T10:00:00Z"], utc=True),
-            "intensity.actual": [150],
+            "actual_intensity": [150],
             "intensity_index": ["moderate"],
         }
     )
@@ -110,7 +110,7 @@ def test_feature_worker_empty_features(tmp_path: Path) -> None:
 def _featured_df(feature_cols: list[str]) -> pd.DataFrame:
     """Build a minimal df_featured for test_worker."""
     data = {col: [0.5] for col in feature_cols}
-    data["intensity.actual"] = [150.0]
+    data["actual_intensity"] = [150.0]
     return pd.DataFrame(data)
 
 
@@ -204,7 +204,7 @@ def test_retrain_worker() -> None:
     # Need enough rows for time_split (which splits 80/20)
     n = 10
     data = {col: list(range(n)) for col in feature_cols}
-    data["intensity.actual"] = [100.0 + i for i in range(n)]
+    data["actual_intensity"] = [100.0 + i for i in range(n)]
     df = pd.DataFrame(data)
 
     fake_candidate = MagicMock()

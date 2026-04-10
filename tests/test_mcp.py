@@ -21,6 +21,7 @@ from __future__ import annotations
 import asyncio
 import subprocess
 import time
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import httpx
@@ -137,7 +138,7 @@ async def running_server():
     """Start the MCP server as a subprocess and wait for /health to respond."""
     proc = subprocess.Popen(
         ["uv", "run", "python", "src/ml605_mcp/server.py"],
-        cwd="f:/ml605-project",
+        cwd=str(Path(__file__).parent.parent),
     )
     # Poll health endpoint until ready (up to 10 seconds)
     async with httpx.AsyncClient() as http_client:
