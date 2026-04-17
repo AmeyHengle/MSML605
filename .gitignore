@@ -41,7 +41,19 @@ mlflow.db
 .claude/
 CLAUDE.md
 
+# planning (local only)
+.planning/
+
 # git worktrees
 .worktrees/
 
 /docs/
+
+# reports (generated at runtime)
+reports/
+
+# env files
+.env
+
+#data
+data/

@@ -122,4 +122,3 @@ def fetch_window_dataframe(
     raw_factors_json = json.dumps(factors, indent=2)
 
     return WindowFetchResult(df=df, factors=factors, raw_factors_json=raw_factors_json)
-

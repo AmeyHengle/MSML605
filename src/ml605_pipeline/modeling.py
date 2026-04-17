@@ -15,6 +15,7 @@ class TrainResult:
 
 
 def time_split(df: pd.DataFrame, feature_cols: list[str], target_col: str = "actual_intensity"):
+    df = df.dropna(subset=[target_col])
     split_idx = int(len(df) * 0.8)
     X = df[feature_cols].fillna(0.0)
     y = df[target_col]

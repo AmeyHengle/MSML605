@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>ML605 Pipeline Report — {{ run_timestamp }}</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 1100px; margin: 2rem auto; padding: 0 1rem; color: #1a1a2e; }
+    h1 { border-bottom: 2px solid #4a90d9; padding-bottom: .5rem; }
+    h2 { color: #2c5f8f; margin-top: 2rem; }
+    table { border-collapse: collapse; width: 100%; margin: 1rem 0; }
+    th, td { border: 1px solid #d0d7de; padding: .5rem .75rem; text-align: left; }
+    th { background: #f0f4f8; font-weight: 600; }
+    tr:nth-child(even) { background: #f9fbfc; }
+    .drift-yes { color: #c0392b; font-weight: bold; }
+    .drift-no  { color: #27ae60; }
+    .summary   { background: #f0f7ff; border-left: 4px solid #4a90d9; padding: 1rem 1.25rem; margin: 1rem 0; line-height: 1.7; }
+    .header-meta { color: #555; font-size: .9rem; margin-bottom: 1.5rem; }
+    img { max-width: 100%; height: auto; border: 1px solid #e0e6ed; border-radius: 4px; }
+  </style>
+</head>
+<body>
+
+{# Section 1: Pipeline run summary header #}
+<h1>ML605 Pipeline Report</h1>
+<div class="header-meta">
+  <strong>Run timestamp:</strong> {{ run_timestamp }} &nbsp;|&nbsp;
+  <strong>MLflow run ID:</strong> {{ mlflow_run_id | default("N/A") }} &nbsp;|&nbsp;
+  <strong>Status:</strong> {{ status }}
+</div>
+
+{# Section 2: Performance metrics table #}
+<h2>Performance Metrics</h2>
+<table>
+  <tr><th>Metric</th><th>Value</th></tr>
+  <tr><td>RMSE</td><td>{{ "%.4f" | format(metrics.rmse) }}</td></tr>
+  <tr><td>MAE</td><td>{{ "%.4f" | format(metrics.mae) }}</td></tr>
+  <tr><td>R²</td><td>{{ "%.4f" | format(metrics.r2) }}</td></tr>
+  <tr><td>MAPE</td><td>{{ "%.4f" | format(metrics.mape) }}</td></tr>
+</table>
+
+{# Section 3: Forecast vs. actual chart #}
+<h2>Forecast vs. Actual</h2>
+{% if forecast_chart_b64 %}
+<img src="data:image/png;base64,{{ forecast_chart_b64 }}" alt="Forecast vs Actual chart">
+{% else %}
+<p><em>Chart not available.</em></p>
+{% endif %}
+
+{# Section 4: SHAP summary bar chart #}
+<h2>Feature Importance (SHAP)</h2>
+{% if shap_available and shap_chart_b64 %}
+<img src="data:image/png;base64,{{ shap_chart_b64 }}" alt="SHAP feature importance bar chart">
+{% else %}
+<p><em>SHAP explainability not available for this model type.</em></p>
+{% endif %}
+
+{# Section 5: Drift verdict with per-feature breakdown #}
+<h2>Drift Analysis</h2>
+<p>
+  Overall drift verdict:
+  {% if overall_drift %}
+  <span class="drift-yes">DRIFT DETECTED</span>
+  {% else %}
+  <span class="drift-no">No drift detected</span>
+  {% endif %}
+</p>
+{% if rmse_degradation_pct is not none %}
+<p>RMSE degradation vs. production: <strong>{{ "%.1f" | format(rmse_degradation_pct) }}%</strong>
+(threshold: 20%)</p>
+{% endif %}
+{% if drift_features %}
+<table>
+  <tr><th>Feature</th><th>PSI</th><th>KS p-value</th><th>Drifted</th></tr>
+  {% for f in drift_features %}
+  <tr>
+    <td>{{ f.feature }}</td>
+    <td>{{ "%.4f" | format(f.psi) }}</td>
+    <td>{{ "%.4f" | format(f.ks_p_value) }}</td>
+    <td class="{{ 'drift-yes' if f.drift_detected else 'drift-no' }}">
+      {{ "Yes" if f.drift_detected else "No" }}
+    </td>
+  </tr>
+  {% endfor %}
+</table>
+{% endif %}
+
+{# Section 6: Model comparison — current vs. previous Production model #}
+<h2>Model Comparison</h2>
+{% if model_comparison %}
+<table>
+  <tr><th>Model</th><th>RMSE</th><th>MAE</th></tr>
+  <tr>
+    <td>Current run</td>
+    <td>{{ "%.4f" | format(model_comparison.current_rmse) }}</td>
+    <td>{{ "%.4f" | format(model_comparison.current_mae) }}</td>
+  </tr>
+  <tr>
+    <td>Previous Production (v{{ model_comparison.production_version }})</td>
+    <td>{{ "%.4f" | format(model_comparison.production_rmse) }}</td>
+    <td>{{ "%.4f" | format(model_comparison.production_mae) if model_comparison.production_mae is not none else "N/A" }}</td>
+  </tr>
+</table>
+{% else %}
+<p><em>N/A — first run or no Production model registered.</em></p>
+{% endif %}
+
+{# Section 7: LLM-generated plain-English summary #}
+<h2>Pipeline Summary</h2>
+<div class="summary">{{ llm_summary }}</div>
+
+</body>
+</html>
