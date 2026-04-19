@@ -80,7 +80,7 @@ def test_forecast_chart_returns_nonempty_string() -> None:
     model = RandomForestRegressor(n_estimators=5, random_state=0)
     model.fit(X, y)
     df = X.copy()
-    df["intensity.actual"] = y
+    df["actual_intensity"] = y
 
     result = _forecast_chart_to_base64(df, feature_cols, model)
 
@@ -106,7 +106,7 @@ def test_forecast_chart_does_not_call_plt_show(monkeypatch) -> None:
     model = RandomForestRegressor(n_estimators=5, random_state=0)
     model.fit(X, y)
     df = X.copy()
-    df["intensity.actual"] = y
+    df["actual_intensity"] = y
 
     _forecast_chart_to_base64(df, feature_cols, model)
 

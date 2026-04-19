@@ -28,7 +28,7 @@ def test_shap_computed_for_tree_model() -> None:
     model = RandomForestRegressor(n_estimators=5, random_state=0)
     model.fit(X, y)
     df = X.copy()
-    df["intensity.actual"] = y
+    df["actual_intensity"] = y
 
     with (
         patch("ml605_agent.graph.load_production_model", return_value=model),
@@ -65,7 +65,7 @@ def test_shap_fallback_for_ridge() -> None:
     model = Ridge()
     model.fit(X, y)
     df = X.copy()
-    df["intensity.actual"] = y
+    df["actual_intensity"] = y
 
     with (
         patch("ml605_agent.graph.load_production_model", return_value=model),
@@ -103,7 +103,7 @@ def test_shap_artifact_logged() -> None:
     model = RandomForestRegressor(n_estimators=5, random_state=0)
     model.fit(X, y)
     df = X.copy()
-    df["intensity.actual"] = y
+    df["actual_intensity"] = y
 
     logged_artifacts = []
 
@@ -147,7 +147,7 @@ def _make_state(model, feature_cols, n=20):
     y = np.random.rand(n) * 100
     model.fit(X, y)
     df = X.copy()
-    df["intensity.actual"] = y
+    df["actual_intensity"] = y
 
     from ml605_pipeline.evaluate import EvalResult
     from ml605_pipeline.drift import DriftReport
@@ -212,7 +212,7 @@ def test_forecast_chart_embedded() -> None:
     model = RandomForestRegressor(n_estimators=5, random_state=0)
     model.fit(X, y)
     df = X.copy()
-    df["intensity.actual"] = y
+    df["actual_intensity"] = y
 
     chart_b64 = _forecast_chart_to_base64(df, feature_cols, model)
     assert len(chart_b64) > 100, "Expected non-empty base64 chart string"

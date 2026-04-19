@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -72,13 +73,16 @@ def fetch_data_for_range(start_dt: datetime, end_dt: datetime) -> list[dict]:
         f"{GENERATION_API_BASE}/{to_api_datetime(start_dt)}/{to_api_datetime(end_dt)}"
     )
 
-    intensity_response = requests.get(intensity_url, timeout=30)
-    intensity_response.raise_for_status()
-    intensity_payload = intensity_response.json().get("data", [])
+    def _get_payload(url: str) -> list[dict]:
+        resp = requests.get(url, timeout=30)
+        resp.raise_for_status()
+        return resp.json().get("data", [])
 
-    generation_response = requests.get(generation_url, timeout=30)
-    generation_response.raise_for_status()
-    generation_payload = generation_response.json().get("data", [])
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        f_intensity = executor.submit(_get_payload, intensity_url)
+        f_generation = executor.submit(_get_payload, generation_url)
+        intensity_payload = f_intensity.result()
+        generation_payload = f_generation.result()
 
     generation_by_from = {item.get("from"): item for item in generation_payload}
 
