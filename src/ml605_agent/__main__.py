@@ -12,16 +12,24 @@ This module:
 from __future__ import annotations
 
 import atexit
+import os
 import subprocess
 import time
 from pathlib import Path
 
-import httpx
-import mlflow
+# Load .env from the project root BEFORE importing mlflow so MLFLOW_TRACKING_URI
+# is picked up by the mlflow client on import.
+from dotenv import load_dotenv
 
-from ml605_agent.graph import build_graph
-from ml605_agent.state import PipelineState
-from ml605_pipeline.config import load_config_from_env
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+load_dotenv(_PROJECT_ROOT / ".env")
+
+import httpx  # noqa: E402
+import mlflow  # noqa: E402
+
+from ml605_agent.graph import build_graph  # noqa: E402
+from ml605_agent.state import PipelineState  # noqa: E402
+from ml605_pipeline.config import load_config_from_env  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # MCP server lifecycle
@@ -90,13 +98,23 @@ def ensure_mcp_server() -> None:
 def main() -> None:
     """Run the full ml605 agentic pipeline."""
     config = load_config_from_env()
+
+    tracking_uri = os.getenv("MLFLOW_TRACKING_URI", "sqlite:///mlflow.db")
+    mlflow.set_tracking_uri(tracking_uri)
+
+    # Experiment name comes from MLFLOW_EXPERIMENT (.env) via load_config_from_env().
+    # Falls back to "agentic-pipeline" only if neither the env var nor config sets it.
+    experiment = config.mlflow_experiment or "agentic-pipeline"
+
+    print(f"[ml605_agent] tracking_uri={tracking_uri}")
+    print(f"[ml605_agent] experiment={experiment}")
     print(f"[ml605_agent] Starting pipeline (window_hours={config.window_hours})")
 
     ensure_mcp_server()
     print("[ml605_agent] MCP server ready")
 
     graph = build_graph()
-    mlflow.set_experiment("agentic-pipeline")
+    mlflow.set_experiment(experiment)
 
     with mlflow.start_run(run_name="agent-pipeline-run") as parent_run:
         initial_state: PipelineState = {

@@ -41,6 +41,9 @@ class PipelineState(TypedDict, total=False):
     # retrain_done: bool — set True by retrain_worker to prevent second retrain cycle in drift routing
     retrain_done: bool
     new_model_version: Optional[str]
+    # MLflow registry stage the new version was promoted to (currently "Production"
+    # — see docs/SLACK_HITL_ROADMAP.md for why HITL-gated Staging was removed).
+    model_stage: Optional[str]
 
     # report_worker output (Phase 3)
     report_path: Optional[str]

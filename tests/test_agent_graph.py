@@ -1,10 +1,14 @@
 """Tests for ml605_agent graph topology and routing.
 
 Graph topology tests, routing function unit tests, and mocked full-pipeline runs.
+
+Note: Slack alerting and HITL approval have been removed from the active graph
+(see docs/SLACK_HITL_ROADMAP.md). Tests for those behaviours live in
+tests/test_alert_worker.py and tests/test_slack_hitl.py and are currently
+skipped at module level until Slack + HITL are re-wired.
 """
 from __future__ import annotations
 
-import pandas as pd
 import pytest
 
 
@@ -14,7 +18,7 @@ import pytest
 
 
 def test_graph_compiles() -> None:
-    """build_graph() returns a compiled graph object with invoke and ainvoke methods."""
+    """build_graph() returns a compiled graph with the active node set."""
     from ml605_agent.graph import build_graph
 
     graph = build_graph()
@@ -29,12 +33,16 @@ def test_graph_compiles() -> None:
         "drift_worker",
         "retrain_worker",
         "report_worker",
-        "hitl_decision_node",
-        "alert_worker",
         "error_handler",
     }
     for name in expected:
         assert name in nodes, f"Node '{name}' missing from graph. Got: {list(nodes.keys())}"
+
+    # HITL + alert nodes must NOT be wired into the active graph right now.
+    for removed in ("hitl_decision_node", "alert_worker"):
+        assert removed not in nodes, (
+            f"Node '{removed}' should be unwired while Slack/HITL is disabled"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -51,19 +59,13 @@ def test_routing_no_drift() -> None:
 
 
 def test_routing_with_drift() -> None:
-    """route_after_drift returns 'report_worker' when drift=True (HITL node decides retrain)."""
+    """route_after_drift returns 'report_worker' even when drift=True.
+
+    The retrain decision now happens in route_after_report, not here.
+    """
     from ml605_agent.graph import route_after_drift
 
-    # Phase 4: route_after_drift always goes to report_worker (HITL decides retrain)
     result = route_after_drift({"status": "running", "overall_drift": True, "retrain_done": False})
-    assert result == "report_worker"
-
-
-def test_routing_retrain_done() -> None:
-    """route_after_drift returns 'report_worker' when retrain_done=True."""
-    from ml605_agent.graph import route_after_drift
-
-    result = route_after_drift({"status": "running", "overall_drift": True, "retrain_done": True})
     assert result == "report_worker"
 
 
@@ -73,6 +75,40 @@ def test_routing_error() -> None:
 
     result = route_after_drift({"status": "error"})
     assert result == "error_handler"
+
+
+def test_route_after_report_drift_triggers_retrain() -> None:
+    """drift + not retrain_done → retrain_worker."""
+    from ml605_agent.graph import route_after_report
+
+    assert route_after_report(
+        {"status": "running", "overall_drift": True, "retrain_done": False}
+    ) == "retrain_worker"
+
+
+def test_route_after_report_no_drift_ends() -> None:
+    """No drift → end (no HITL, no alert, no retrain)."""
+    from ml605_agent.graph import route_after_report
+
+    assert route_after_report(
+        {"status": "running", "overall_drift": False, "retrain_done": False}
+    ) == "end"
+
+
+def test_route_after_report_retrain_done_ends() -> None:
+    """Drift still fires but retrain already ran this invocation → end."""
+    from ml605_agent.graph import route_after_report
+
+    assert route_after_report(
+        {"status": "running", "overall_drift": True, "retrain_done": True}
+    ) == "end"
+
+
+def test_route_after_report_error() -> None:
+    """status=error → error_handler."""
+    from ml605_agent.graph import route_after_report
+
+    assert route_after_report({"status": "error"}) == "error_handler"
 
 
 def test_routing_after_retrain() -> None:
@@ -97,15 +133,10 @@ def test_routing_after_retrain_error() -> None:
 
 
 def test_full_pipeline_no_drift(monkeypatch) -> None:
-    """Graph run with overall_drift=False reaches alert_worker (alert_sent=False).
-
-    Note: Workers are mocked to return only scalar/primitive state values to avoid
-    DataFrame serialization issues with the MemorySaver checkpointer.
-    """
+    """No drift: pipeline runs end-to-end without retraining and terminates."""
     from ml605_agent import graph as graph_module
     from ml605_agent.graph import build_graph
 
-    # Return only serializable primitives — MemorySaver cannot serialize DataFrames
     monkeypatch.setattr(
         graph_module,
         "fetch_worker",
@@ -123,27 +154,21 @@ def test_full_pipeline_no_drift(monkeypatch) -> None:
         lambda s: {"drift_report": None, "overall_drift": False},
     )
     monkeypatch.setattr(graph_module, "report_worker", lambda s: {"report_path": None})
-    # Mock hitl_decision_node to skip interrupt (no checkpointer in these tests)
-    monkeypatch.setattr(graph_module, "hitl_decision_node", lambda s: {"hitl_decision": "no_drift"})
-    monkeypatch.setattr(
-        graph_module,
-        "alert_worker",
-        lambda s: {"alert_sent": False, "status": "complete"},
-    )
 
     g = build_graph()
     result = g.invoke(
-        {"window_hours": 6, "status": "running"},
+        {"window_hours": 6, "status": "running", "retrain_done": False},
         config={"configurable": {"thread_id": "test-no-drift"}, "recursion_limit": 25},
     )
-    assert result["alert_sent"] is False
+    assert result.get("retrain_done") is False
+    assert result.get("overall_drift") is False
 
 
 def test_full_pipeline_with_drift(monkeypatch) -> None:
-    """Graph run with overall_drift=True, HITL approve, triggers retrain; retrain_done=True in final state.
+    """Drift: pipeline auto-retrains (no HITL), sets retrain_done, then ends.
 
-    Note: Workers are mocked to return only scalar/primitive state values.
-    hitl_decision_node is mocked to return 'approve' (simulating human approval).
+    The back-edge retrain → test_worker must run exactly once: retrain_done=True
+    causes route_after_report to route to END on the second pass.
     """
     from ml605_agent import graph as graph_module
     from ml605_agent.graph import build_graph
@@ -155,20 +180,15 @@ def test_full_pipeline_with_drift(monkeypatch) -> None:
         return {"eval_result": None}
 
     def fake_drift_worker(s):
-        # Always reports drift (retrain_done guards the loop via route_after_retrain + hitl)
+        # Always reports drift; retrain_done is what stops the loop.
         return {"drift_report": None, "overall_drift": True}
 
     def fake_retrain_worker(s):
-        return {"new_model_version": "2", "retrain_done": True}
-
-    hitl_call_count = {"n": 0}
-
-    def fake_hitl(s):
-        hitl_call_count["n"] += 1
-        # First time: approve retrain; second time (after retrain loop): no_drift
-        if s.get("retrain_done"):
-            return {"hitl_decision": "no_drift"}
-        return {"hitl_decision": "approve"}
+        return {
+            "new_model_version": "2",
+            "retrain_done": True,
+            "model_stage": "Production",
+        }
 
     monkeypatch.setattr(
         graph_module,
@@ -184,12 +204,6 @@ def test_full_pipeline_with_drift(monkeypatch) -> None:
     monkeypatch.setattr(graph_module, "drift_worker", fake_drift_worker)
     monkeypatch.setattr(graph_module, "retrain_worker", fake_retrain_worker)
     monkeypatch.setattr(graph_module, "report_worker", lambda s: {"report_path": None})
-    monkeypatch.setattr(graph_module, "hitl_decision_node", fake_hitl)
-    monkeypatch.setattr(
-        graph_module,
-        "alert_worker",
-        lambda s: {"alert_sent": False, "status": "complete"},
-    )
 
     g = build_graph()
     result = g.invoke(
@@ -197,6 +211,9 @@ def test_full_pipeline_with_drift(monkeypatch) -> None:
         config={"configurable": {"thread_id": "test-with-drift"}, "recursion_limit": 25},
     )
     assert result.get("retrain_done") is True
+    assert result.get("model_stage") == "Production"
+    # test_worker should have run twice: once before drift, once on the retrain back-edge.
+    assert call_count["test"] == 2
 
 
 def test_error_handler_routing(monkeypatch) -> None:
@@ -219,6 +236,5 @@ def test_error_handler_routing(monkeypatch) -> None:
         initial_state,
         config={"configurable": {"thread_id": "test-error-routing"}, "recursion_limit": 25},
     )
-    # error_handler sets status=error and preserves error field
     assert result.get("status") == "error"
     assert result.get("error") is not None

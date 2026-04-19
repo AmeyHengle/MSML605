@@ -273,10 +273,23 @@ def drift_worker(state: PipelineState) -> dict:
 
 
 def retrain_worker(state: PipelineState) -> dict:
-    """Retrain the model using AutoML and register new version in Staging.
+    """Retrain the model using AutoML, register a new version, and auto-promote
+    it to the **Production** stage.
+
+    HITL was removed from the graph (see ``docs/SLACK_HITL_ROADMAP.md``), so
+    there is no manual gate between training and promotion. The new model is
+    pushed straight to Production (``transition_model_stage`` with
+    ``archive_existing_versions=True`` automatically archives the previous
+    Production version), which guarantees that:
+
+    * the back-edge ``retrain_worker -> test_worker`` re-evaluates the
+      newly trained model in the *same* pipeline invocation, and
+    * the **next** pipeline run's ``test_worker`` — which loads the current
+      Production model via ``load_production_model()`` — will pick up this
+      retrained model automatically.
 
     Returns:
-        {"new_model_version": str, "retrain_done": True}
+        {"new_model_version": str, "retrain_done": True, "model_stage": "Production"}
         or {"status": "error", "error": str} on failure.
     """
     try:
@@ -295,11 +308,19 @@ def retrain_worker(state: PipelineState) -> dict:
         mlflow_run_id = state.get("mlflow_run_id")
         ctx = mlflow.start_run(run_name="retrain_worker", nested=True) if mlflow_run_id else nullcontext()
 
+        target_stage = "Production"
         with ctx:
             automl_result = run_automl(X_train, y_train, X_test, y_test)
             version = register_model(automl_result.best.run_id)
-            transition_model_stage(version, "Staging")
+            transition_model_stage(version, target_stage)
+            if mlflow_run_id:
+                mlflow.log_param("retrain_promotion_stage", target_stage)
+                mlflow.log_param("retrain_new_version", version)
 
-        return {"new_model_version": version, "retrain_done": True}
+        return {
+            "new_model_version": version,
+            "retrain_done": True,
+            "model_stage": target_stage,
+        }
     except Exception as exc:  # noqa: BLE001
         return {"status": "error", "error": str(exc)}

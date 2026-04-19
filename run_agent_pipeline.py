@@ -14,6 +14,7 @@ Environment variables (optional):
 """
 from __future__ import annotations
 
+import os
 from pathlib import Path
 import sys
 
@@ -22,18 +23,31 @@ _SRC = _ROOT / "src"
 if _SRC.exists() and str(_SRC) not in sys.path:
     sys.path.insert(0, str(_SRC))
 
-import mlflow
+# Load .env BEFORE importing mlflow so MLFLOW_TRACKING_URI is seen by the
+# mlflow client the moment it is imported.
+from dotenv import load_dotenv  # noqa: E402
 
-from ml605_agent.__main__ import ensure_mcp_server
-from ml605_agent.graph import build_graph
-from ml605_agent.state import PipelineState
-from ml605_pipeline.config import load_config_from_env
+load_dotenv(_ROOT / ".env")
+
+import mlflow  # noqa: E402
+
+from ml605_agent.__main__ import ensure_mcp_server  # noqa: E402
+from ml605_agent.graph import build_graph  # noqa: E402
+from ml605_agent.state import PipelineState  # noqa: E402
+from ml605_pipeline.config import load_config_from_env  # noqa: E402
 
 
 def main() -> None:
     cfg = load_config_from_env()
     experiment = cfg.mlflow_experiment or "agentic-pipeline"
 
+    # Belt-and-suspenders: mlflow already honours MLFLOW_TRACKING_URI from the
+    # environment, but pinning it explicitly guarantees every entry point
+    # (this script, `python -m ml605_agent`, CI) writes to the same store.
+    tracking_uri = os.getenv("MLFLOW_TRACKING_URI", "sqlite:///mlflow.db")
+    mlflow.set_tracking_uri(tracking_uri)
+
+    print(f"[run_agent_pipeline] tracking_uri={tracking_uri}")
     print(f"[run_agent_pipeline] window_hours={cfg.window_hours}  experiment={experiment}")
 
     ensure_mcp_server()

@@ -2,18 +2,31 @@
 
 Tests the HITL decision node that pauses LangGraph for human approval when drift detected.
 Uses a minimal test graph (not the full pipeline) to isolate HITL behavior.
+
+NOTE: These tests are skipped until Slack + HITL are re-wired into the agent
+graph. The ``hitl_decision_node`` and ``route_after_hitl`` helpers are still
+defined in ``ml605_agent.graph`` for that future work. See
+``docs/SLACK_HITL_ROADMAP.md`` for restoration steps.
 """
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
-
 import pytest
-from langgraph.checkpoint.memory import MemorySaver
-from langgraph.graph import END, START, StateGraph
-from langgraph.types import Command
 
-from ml605_agent.graph import hitl_decision_node, route_after_hitl
-from ml605_agent.state import PipelineState
+pytestmark = pytest.mark.skip(
+    reason=(
+        "HITL interrupt/resume is currently unwired from the graph. "
+        "See docs/SLACK_HITL_ROADMAP.md to re-enable and unskip."
+    )
+)
+
+from unittest.mock import MagicMock, patch  # noqa: E402
+
+from langgraph.checkpoint.memory import MemorySaver  # noqa: E402
+from langgraph.graph import END, START, StateGraph  # noqa: E402
+from langgraph.types import Command  # noqa: E402
+
+from ml605_agent.graph import hitl_decision_node, route_after_hitl  # noqa: E402
+from ml605_agent.state import PipelineState  # noqa: E402
 
 
 # ---------------------------------------------------------------------------

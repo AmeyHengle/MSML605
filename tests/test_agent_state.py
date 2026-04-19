@@ -3,7 +3,7 @@ from __future__ import annotations
 
 
 def test_state_schema() -> None:
-    """PipelineState is a TypedDict with all 21 required fields."""
+    """PipelineState is a TypedDict with the expected required fields."""
     from ml605_agent.state import PipelineState
 
     # TypedDict instances are plain dicts at runtime
@@ -25,8 +25,12 @@ def test_state_schema() -> None:
         "production_rmse",
         "retrain_done",
         "new_model_version",
+        # Registry stage the new model was promoted to after retrain
+        # (currently "Production" — see docs/SLACK_HITL_ROADMAP.md).
+        "model_stage",
         "report_path",
-        # Slack/HITL fields (added in Plan 04-01)
+        # Slack/HITL fields (retained for future re-integration; currently
+        # unused by the active graph — see docs/SLACK_HITL_ROADMAP.md).
         "shap_top_features",
         "alert_sent",
         "hitl_decision",

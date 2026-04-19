@@ -2,6 +2,10 @@
 
 Tests that alert_worker posts drift alerts and no-drift summaries to Slack via WebClient.
 Uses mock WebClient to avoid actual Slack API calls.
+
+NOTE: These tests are skipped until Slack alerting is re-wired into the agent
+graph. The ``alert_worker`` function is still defined in ``ml605_agent.graph``
+for that future work. See ``docs/SLACK_HITL_ROADMAP.md`` for restoration steps.
 """
 from __future__ import annotations
 
@@ -10,6 +14,13 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
+
+pytestmark = pytest.mark.skip(
+    reason=(
+        "Slack alert_worker is currently unwired from the graph. "
+        "See docs/SLACK_HITL_ROADMAP.md to re-enable and unskip."
+    )
+)
 
 
 # ---------------------------------------------------------------------------

@@ -1,7 +1,17 @@
 """LangGraph pipeline graph assembly for the ml605 agent.
 
-This module defines the full StateGraph topology connecting all worker nodes
-with conditional routing for drift detection, HITL interrupt/resume, and error handling.
+Current topology (Slack + HITL disabled — see docs/SLACK_HITL_ROADMAP.md):
+
+    START -> fetch_worker -> feature_worker -> test_worker -> drift_worker
+    -> report_worker -> route_after_report
+        drift & not retrain_done -> retrain_worker -> test_worker (back-edge)
+        else                      -> END
+    Any worker error              -> error_handler -> END
+
+The ``hitl_decision_node``, ``route_after_hitl`` and ``alert_worker`` helpers
+are intentionally *kept defined* in this module so re-enabling Slack + HITL
+later is purely a wiring change in ``build_graph``. See
+``docs/SLACK_HITL_ROADMAP.md`` for the exact steps.
 """
 from __future__ import annotations
 
@@ -455,11 +465,32 @@ def route_after_drift(state: PipelineState) -> str:
     """Route after drift_worker.
 
     - status=error → error_handler
-    - all other cases → report_worker (HITL decides retrain; report runs before HITL)
+    - all other cases → report_worker (decision about retrain is made after the
+      report is generated so the report always reflects current drift state).
     """
     if state.get("status") == "error":
         return "error_handler"
     return "report_worker"
+
+
+def route_after_report(state: PipelineState) -> str:
+    """Route after report_worker (replaces the old HITL decision node).
+
+    - status=error                       → error_handler
+    - overall_drift and not retrain_done → retrain_worker (auto-retrain, no HITL)
+    - else                               → end  (covers no-drift AND
+                                                 retrain-already-done-this-run)
+
+    The ``retrain_done`` guard is what keeps the retrain back-edge from looping
+    forever: after ``retrain_worker`` runs once it sets ``retrain_done=True``,
+    so the next pass through ``route_after_report`` falls through to END even
+    if drift is still flagged against the historical reference.
+    """
+    if state.get("status") == "error":
+        return "error_handler"
+    if state.get("overall_drift") and not state.get("retrain_done", False):
+        return "retrain_worker"
+    return "end"
 
 
 def hitl_decision_node(state: PipelineState) -> dict:
@@ -539,64 +570,61 @@ def route_after_retrain(state: PipelineState) -> str:
 
 
 def build_graph(checkpointer=None):
-    """Assemble and compile the full ml605 pipeline StateGraph.
+    """Assemble and compile the ml605 pipeline StateGraph.
 
-    Topology:
+    Active topology (Slack + HITL disabled):
+
         START → fetch_worker → feature_worker → test_worker → drift_worker
-        drift_worker → report_worker → hitl_decision_node
-        hitl_decision_node → [approve: retrain_worker → test_worker loop; reject/no_drift: alert_worker]
-        alert_worker → END
-        Any error → error_handler → END
+        → report_worker → route_after_report
+            drift & not retrain_done → retrain_worker → test_worker (back-edge)
+            else                      → END
+        Any worker error              → error_handler → END
 
     Args:
-        checkpointer: Optional LangGraph checkpointer (e.g. MemorySaver) for HITL interrupt/resume.
-            If None, graph cannot use interrupt() — for backward-compatible non-Slack runs.
+        checkpointer: Optional LangGraph checkpointer. Currently unused by the
+            active flow (there is no ``interrupt()`` anymore) but accepted for
+            API compatibility with callers that still pass one in — e.g. the
+            Slack bot in ``src/ml605_slack/`` when re-enabled.
 
     Returns:
         Compiled LangGraph StateGraph.
     """
     builder = StateGraph(PipelineState)
 
-    # Register nodes
+    # Register nodes (HITL + alert nodes intentionally NOT registered — see
+    # module docstring and docs/SLACK_HITL_ROADMAP.md)
     builder.add_node("fetch_worker", fetch_worker)
     builder.add_node("feature_worker", feature_worker)
     builder.add_node("test_worker", test_worker)
     builder.add_node("drift_worker", drift_worker)
     builder.add_node("retrain_worker", retrain_worker)
     builder.add_node("report_worker", report_worker)
-    builder.add_node("hitl_decision_node", hitl_decision_node)
-    builder.add_node("alert_worker", alert_worker)
     builder.add_node("error_handler", error_handler)
 
-    # Entry: START → fetch_worker (with error routing)
     builder.add_conditional_edges(
         START,
         lambda s: "fetch_worker",
         {"fetch_worker": "fetch_worker"},
     )
 
-    # After fetch: check for error, then go to feature_worker
     builder.add_conditional_edges(
         "fetch_worker",
         route_after_fetch,
         {"feature_worker": "feature_worker", "error_handler": "error_handler"},
     )
 
-    # After feature: check for error, then go to test_worker
     builder.add_conditional_edges(
         "feature_worker",
         route_after_feature,
         {"test_worker": "test_worker", "error_handler": "error_handler"},
     )
 
-    # After test: check for error, then go to drift_worker
     builder.add_conditional_edges(
         "test_worker",
         route_after_test,
         {"drift_worker": "drift_worker", "error_handler": "error_handler"},
     )
 
-    # After drift: always go to report_worker (HITL decides retrain after seeing report)
     builder.add_conditional_edges(
         "drift_worker",
         route_after_drift,
@@ -606,29 +634,27 @@ def build_graph(checkpointer=None):
         },
     )
 
-    # After retrain: back-edge to test_worker (re-verify new model)
+    # After retrain: back-edge to test_worker so the new Production model is
+    # re-evaluated in the same pipeline invocation. The retrain_done flag set
+    # by retrain_worker is what prevents an infinite retrain loop — see
+    # route_after_report.
     builder.add_conditional_edges(
         "retrain_worker",
         route_after_retrain,
         {"test_worker": "test_worker", "error_handler": "error_handler"},
     )
 
-    # After report: HITL decision node (may interrupt for human approval)
-    builder.add_edge("report_worker", "hitl_decision_node")
-
-    # After HITL: route to retrain (approve) or alert (reject/no_drift)
+    # After report: either retrain (drift + first pass) or finish.
     builder.add_conditional_edges(
-        "hitl_decision_node",
-        route_after_hitl,
+        "report_worker",
+        route_after_report,
         {
             "retrain_worker": "retrain_worker",
-            "alert_worker": "alert_worker",
+            "end": END,
             "error_handler": "error_handler",
         },
     )
 
-    # Linear tail: alert → END
-    builder.add_edge("alert_worker", END)
     builder.add_edge("error_handler", END)
 
     return builder.compile(checkpointer=checkpointer)
