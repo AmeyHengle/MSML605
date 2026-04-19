@@ -1,0 +1,3 @@
+approach,combos_tried,wall_clock_seconds,best_rmse,target_rmse,reached_target,time_to_target_seconds,combos_to_target,winning_family,winning_params
+Manual Grid Search (no MLflow / no AutoML),22,402.6354803999966,8.314586217086138,8.396578168154482,True,401.7474245000012,20,ridge,{'alpha': 10.0}
+AutoML (ml605_pipeline.automl),5,174.02922509999917,8.396578168154482,8.396578168154482,True,172.358898399998,5,ridge_baseline,"{'alpha': 1.0, 'copy_X': True, 'fit_intercept': True, 'max_iter': None, 'positive': False, 'random_state': None, 'solver': 'auto', 'tol': 0.0001}"
