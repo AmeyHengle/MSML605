@@ -1,0 +1,45 @@
+{
+  "candidate_count": 5,
+  "candidate_names": [
+    "random_forest",
+    "extra_trees",
+    "hist_gradient_boosting",
+    "gradient_boosting",
+    "ridge_baseline"
+  ],
+  "parallel": {
+    "runs": 5,
+    "avg_s": 40.32564981999458,
+    "median_s": 40.967353899992304,
+    "stdev_s": 3.0389034753850863,
+    "times_s": [
+      40.967353899992304,
+      41.277218999995966,
+      39.0963664999872,
+      36.017816300009144,
+      44.26949339998828
+    ],
+    "best_model": "ridge_baseline",
+    "best_rmse": 5.31655541913072
+  },
+  "sequential": {
+    "runs": 5,
+    "avg_s": 64.2130921199976,
+    "median_s": 63.832194799993886,
+    "stdev_s": 1.9920266629526955,
+    "times_s": [
+      67.61516109999502,
+      63.832194799993886,
+      62.656099999992875,
+      64.0543214000063,
+      62.90768329999992
+    ],
+    "best_model": "ridge_baseline",
+    "best_rmse": 5.31655541913072
+  },
+  "improvement": {
+    "avg_delta_s": 23.887442300003016,
+    "avg_percent_faster": 37.20026790699253,
+    "avg_speedup_x": 1.592363480976293
+  }
+}

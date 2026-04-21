@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 
 import mlflow
@@ -77,39 +78,103 @@ def _evaluate_candidate(
     return ModelCandidate(name=name, model=model, metrics=metrics, rmse=test_metrics.rmse)
 
 
+def _train_candidates_sequential(
+    X_train: pd.DataFrame,
+    y_train: pd.Series,
+    X_test: pd.DataFrame,
+    y_test: pd.Series,
+) -> list[ModelCandidate]:
+    """Train all candidates one after another (legacy path, used for benchmarking)."""
+    out: list[ModelCandidate] = []
+    for name, template in CANDIDATE_MODELS.items():
+        model = clone(template)
+        out.append(_evaluate_candidate(name, model, X_train, y_train, X_test, y_test))
+    return out
+
+
+def _train_candidates_parallel(
+    X_train: pd.DataFrame,
+    y_train: pd.Series,
+    X_test: pd.DataFrame,
+    y_test: pd.Series,
+    max_workers: int | None = None,
+) -> list[ModelCandidate]:
+    """
+    Train all candidates concurrently using a thread pool.
+
+    Threading is safe here because sklearn releases the GIL in the heavy numeric paths
+    (BLAS/LAPACK for Ridge, tree-building inner loops for the ensembles), so the Python
+    wall-clock gap shrinks to the slowest single candidate rather than the sum of all.
+    MLflow is *not* called from worker threads — nested runs rely on thread-local state
+    that does not propagate cleanly into the pool.
+    """
+    workers = max_workers or len(CANDIDATE_MODELS)
+    futures = {}
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        for name, template in CANDIDATE_MODELS.items():
+            model = clone(template)
+            fut = executor.submit(
+                _evaluate_candidate, name, model, X_train, y_train, X_test, y_test
+            )
+            futures[fut] = name
+
+        completed: list[ModelCandidate] = []
+        for fut in as_completed(futures):
+            completed.append(fut.result())
+
+    order = list(CANDIDATE_MODELS.keys())
+    completed.sort(key=lambda c: order.index(c.name))
+    return completed
+
+
 def run_automl(
     X_train: pd.DataFrame,
     y_train: pd.Series,
     X_test: pd.DataFrame,
     y_test: pd.Series,
+    *,
+    parallel: bool = True,
+    max_workers: int | None = None,
 ) -> AutoMLResult:
     """
     Train all CANDIDATE_MODELS, log each as a nested MLflow run.
     Returns AutoMLResult with the best model (lowest test RMSE).
 
     Must be called inside an active mlflow.start_run() context so nested runs attach.
-    """
-    candidates: list[ModelCandidate] = []
 
-    for name, model_template in CANDIDATE_MODELS.items():
-        model = clone(model_template)
-        with mlflow.start_run(run_name=name, nested=True) as child_run:
-            candidate = _evaluate_candidate(name, model, X_train, y_train, X_test, y_test)
-            mlflow.log_param("model_type", name)
+    Args:
+        parallel: If True (default), candidates are trained concurrently in a thread
+            pool and MLflow nested runs are logged sequentially afterward. If False,
+            falls back to the original serial train-and-log loop.
+        max_workers: Thread pool size when parallel=True. Defaults to the number
+            of candidates so each model gets its own thread.
+    """
+    if parallel:
+        trained = _train_candidates_parallel(
+            X_train, y_train, X_test, y_test, max_workers=max_workers
+        )
+    else:
+        trained = _train_candidates_sequential(X_train, y_train, X_test, y_test)
+
+    candidates: list[ModelCandidate] = []
+    for candidate in trained:
+        with mlflow.start_run(run_name=candidate.name, nested=True) as child_run:
+            mlflow.log_param("model_type", candidate.name)
             mlflow.log_param("feature_count", X_train.shape[1])
             for k, v in candidate.metrics.items():
                 mlflow.log_metric(k, v)
-            mlflow.sklearn.log_model(model, artifact_path="model")
+            mlflow.sklearn.log_model(candidate.model, artifact_path="model")
             child_run_id = child_run.info.run_id
-        # Rebuild with run_id (dataclass is frozen so we use replace pattern)
-        candidate = ModelCandidate(
-            name=candidate.name,
-            model=candidate.model,
-            metrics=candidate.metrics,
-            rmse=candidate.rmse,
-            run_id=child_run_id,
+
+        candidates.append(
+            ModelCandidate(
+                name=candidate.name,
+                model=candidate.model,
+                metrics=candidate.metrics,
+                rmse=candidate.rmse,
+                run_id=child_run_id,
+            )
         )
-        candidates.append(candidate)
 
     best = min(candidates, key=lambda c: c.rmse)
     return AutoMLResult(best=best, all_candidates=candidates)
