@@ -1,2 +1,8 @@
-models
 eda.ipynb
+models/
+__pycache__/
+*.pkl
+*.pyc
+.env
+dora_metrics.json
+.coverage

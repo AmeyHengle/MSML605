@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from pipeline import PipelineState
+from monitoring import get_current_metrics, cloudwatch_stream
 
 app = FastAPI(title='CarbonWatch MLOps')
 
@@ -18,7 +19,7 @@ app.add_middleware(
     allow_headers=['*'],
 )
 
-# ── Single-user state ─────────────────────────────────────────────────────────
+# ── Shared state ──────────────────────────────────────────────────────────────
 _state: Optional[PipelineState] = None
 _simulation_running: bool       = False
 
@@ -35,20 +36,21 @@ class NumpyEncoder(json.JSONEncoder):
 class InitConfig(BaseModel):
     feature_x:    str   = 'gas'
     feature_y:    str   = 'forecast_intensity'
-    ks_threshold: float = 0.3
-    n_init:       int   = 100
-    n_monthly:    int   = 50
-    speed:        float = 0.2
+    ks_threshold: float = 0.10
+    n_init:       int   = 50
+    n_monthly:    int   = 5
+    speed:        float = 1.0
     models_dir:   str   = 'models'
     data_path:    str   = 'data/historical_data.csv'
 
 
+# ── Pipeline routes ───────────────────────────────────────────────────────────
 @app.post('/api/initialize')
 async def initialize(config: InitConfig):
     global _state, _simulation_running
     _simulation_running = False
-    _state   = PipelineState(config.model_dump())
-    payload  = _state.initialize()
+    _state  = PipelineState(config.model_dump())
+    payload = _state.initialize()
     return {'status': 'ok', 'data': payload}
 
 
@@ -68,25 +70,18 @@ async def simulate(request: Request):
             while True:
                 if await request.is_disconnected():
                     break
-
                 if not _simulation_running:
                     yield 'data: {"paused": true}\n\n'
                     await asyncio.sleep(0.2)
                     continue
-
                 payload = _state.tick()
-
                 if payload is None:
                     yield 'data: {"done": true}\n\n'
                     break
-
                 yield f'data: {json.dumps(payload, cls=NumpyEncoder)}\n\n'
-
                 if payload.get('done'):
                     break
-
                 await asyncio.sleep(_state.speed)
-
         except asyncio.CancelledError:
             pass
         finally:
@@ -133,3 +128,29 @@ async def status():
         'month_idx':   _state.current_month if _state else None,
         'total':       len(_state.months)   if _state else None,
     }
+
+
+# ── Monitoring routes (Page 2) ────────────────────────────────────────────────
+@app.get('/api/cloudwatch/metrics')
+async def cw_metrics():
+    """Single snapshot of current App Runner CloudWatch metrics."""
+    return get_current_metrics()
+
+
+@app.get('/api/cloudwatch/stream')
+async def cw_stream(request: Request):
+    """SSE stream — polls CloudWatch every 10s, pushes to Page 2."""
+    return await cloudwatch_stream(request)
+
+
+class PredictRequest(BaseModel):
+    features: list
+
+@app.post('/api/predict')
+async def predict(req: PredictRequest):
+    if _state is None or _state.model is None:
+        return {'error': 'model not initialized'}
+    import numpy as np
+    X    = np.array(req.features).reshape(1, -1)
+    pred = float(_state.model.predict(X)[0])
+    return {'forecast_intensity': round(pred, 2)}

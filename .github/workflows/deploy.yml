@@ -5,13 +5,16 @@ on:
     branches:
       - amey-demo
 
+env:
+  AWS_REGION:     us-east-1
+  ECR_REPOSITORY: msml605-backend
+
 jobs:
 
-  # ── Job 1: Unit tests (gate — must pass before anything deploys) ────────────
+  # ── Job 1: Unit tests (gate) ────────────────────────────────────────────────
   unit-tests:
     name: Unit tests — pipeline.py
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v4
         with:
@@ -35,21 +38,50 @@ jobs:
         env:
           PYTHONPATH: .
 
-      - name: Upload coverage report
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage-report
-          path: .coverage
+  # ── Job 2: Build and push Docker image to ECR ───────────────────────────────
+  build-and-push:
+    name: Build Docker image and push to ECR
+    runs-on: ubuntu-latest
+    needs: unit-tests
+    outputs:
+      image-uri: ${{ steps.build.outputs.image-uri }}
 
-  # ── Job 2: Deploy frontend (runs only if unit tests pass) ──────────────────
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: amey-demo
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build tag and push image
+        id: build
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG:    ${{ github.sha }}
+        run: |
+          IMAGE_URI="$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
+          docker build -t "$IMAGE_URI" .
+          docker push "$IMAGE_URI"
+          docker tag  "$IMAGE_URI" "$ECR_REGISTRY/$ECR_REPOSITORY:latest"
+          docker push "$ECR_REGISTRY/$ECR_REPOSITORY:latest"
+          echo "image-uri=$IMAGE_URI" >> $GITHUB_OUTPUT
+
+  # ── Job 3: Deploy frontend to GitHub Pages ──────────────────────────────────
   deploy-frontend:
-    name: Deploy frontend → GitHub Pages
+    name: Deploy frontend to GitHub Pages
     runs-on: ubuntu-latest
     needs: unit-tests
     permissions:
       contents: write
-
     steps:
       - uses: actions/checkout@v4
         with:
@@ -57,35 +89,50 @@ jobs:
 
       - uses: peaceiris/actions-gh-pages@v4
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./frontend
+          github_token:   ${{ secrets.GITHUB_TOKEN }}
+          publish_dir:    ./frontend
           publish_branch: gh-pages
-          force_orphan: true
+          force_orphan:   true
 
-  # ── Job 3: Deploy backend (runs only if unit tests pass) ───────────────────
+  # ── Job 4: Update App Runner with new image ──────────────────────────────────
   deploy-backend:
-    name: Trigger Render redeploy
+    name: Deploy to AWS App Runner
     runs-on: ubuntu-latest
-    needs: unit-tests
-
+    needs: build-and-push
     steps:
-      - name: Ping Render deploy webhook
-        run: |
-          STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
-            --request POST \
-            "${{ secrets.RENDER_DEPLOY_HOOK_URL }}")
-          echo "Render webhook response: $STATUS"
-          if [ "$STATUS" != "200" ] && [ "$STATUS" != "201" ]; then
-            echo "Render webhook failed with status $STATUS"
-            exit 1
-          fi
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            ${{ env.AWS_REGION }}
 
-  # ── Job 4: Post-deploy smoke tests (runs after backend deploys) ─────────────
+      - name: Update App Runner service with new image
+        env:
+          IMAGE_URI: ${{ needs.build-and-push.outputs.image-uri }}
+        run: |
+          aws apprunner update-service \
+            --service-arn "${{ secrets.APP_RUNNER_SERVICE_ARN }}" \
+            --source-configuration "{
+              \"ImageRepository\": {
+                \"ImageIdentifier\": \"$IMAGE_URI\",
+                \"ImageRepositoryType\": \"ECR\",
+                \"ImageConfiguration\": {
+                  \"Port\": \"8000\"
+                }
+              },
+              \"AutoDeploymentsEnabled\": false
+            }"
+          echo "Waiting for App Runner to finish updating..."
+          aws apprunner wait service-updated \
+            --service-arn "${{ secrets.APP_RUNNER_SERVICE_ARN }}"
+          echo "App Runner deployment complete"
+
+  # ── Job 5: Post-deploy smoke tests ──────────────────────────────────────────
   smoke-tests:
-    name: Post-deploy smoke tests — API
+    name: Post-deploy API smoke tests
     runs-on: ubuntu-latest
     needs: deploy-backend
-
     steps:
       - uses: actions/checkout@v4
         with:
@@ -99,43 +146,37 @@ jobs:
       - name: Install test dependencies
         run: pip install requests pytest pytest-timeout
 
-      - name: Wait for Render to finish deploying
+      - name: Poll until service is live
         run: |
-          echo "Waiting 90s for Render container to restart..."
-          sleep 90
-
-      - name: Wait for /api/status to respond
-        run: |
-          MAX=12
+          MAX=18
           COUNT=0
-          until curl -sf "${{ secrets.RENDER_URL }}/api/status" > /dev/null; do
+          until curl -sf "${{ secrets.APP_RUNNER_URL }}/api/status" > /dev/null; do
             COUNT=$((COUNT+1))
             if [ $COUNT -ge $MAX ]; then
-              echo "Service did not come up after $((MAX * 10))s"
+              echo "Service did not come up after $((MAX*10))s"
               exit 1
             fi
             echo "Attempt $COUNT/$MAX — retrying in 10s..."
             sleep 10
           done
-          echo "Service is up"
+          echo "Service is live"
 
-      - name: Run smoke tests (excluding SSE streaming tests)
+      - name: Run smoke tests
         run: |
           pytest tests/test_api.py -v \
             --tb=short \
             -k "not TestSimulate" \
             --timeout=60
         env:
-          BASE_URL: ${{ secrets.RENDER_URL }}
+          BASE_URL:    ${{ secrets.APP_RUNNER_URL }}
           PYTHONPATH: .
 
-  # ── Job 5: DORA metrics (always runs — records failures too) ───────────────
+  # ── Job 6: DORA metrics ──────────────────────────────────────────────────────
   record-dora:
     name: Record DORA metrics
     runs-on: ubuntu-latest
     needs: smoke-tests
     if: always()
-
     steps:
       - uses: actions/checkout@v4
         with:
