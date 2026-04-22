@@ -7,61 +7,40 @@
 <link rel="stylesheet" href="style.css">
 <script src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
 <style>
-.kpi-strip { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin-bottom:14px; }
-.kpi-card  { background:var(--surface); border:1px solid var(--border); border-radius:10px;
-             padding:12px 14px; border-left-width:3px; }
-.kpi-label { font-size:10px; letter-spacing:.08em; color:var(--text-dim);
-             text-transform:uppercase; margin-bottom:5px; }
-.kpi-val   { font-family:'Syne',sans-serif; font-size:26px; font-weight:700;
-             color:var(--text-bright); line-height:1; }
-.kpi-sub   { font-size:10px; color:var(--text-dim); margin-top:3px; }
-
-.instance-grid { display:flex; gap:8px; flex-wrap:wrap; margin-top:8px; }
-.inst-card { background:var(--surface-2); border:1px solid var(--border);
-             border-radius:8px; padding:10px 14px; min-width:130px; }
-.inst-card.active { border-color:var(--green); }
-.inst-id   { font-size:10px; color:var(--text-dim); margin-bottom:4px; }
-.inst-row  { display:flex; gap:16px; margin-top:4px; }
-.inst-stat { font-family:'Syne',sans-serif; font-size:18px; font-weight:700;
-             color:var(--text-bright); }
-.inst-unit { font-size:11px; font-weight:400; }
-.inst-lbl  { font-size:10px; color:var(--text-dim); }
-
-.ctrl-row  { display:flex; align-items:center; gap:14px; flex-wrap:wrap;
-             padding:12px 20px; background:var(--surface);
-             border-bottom:1px solid var(--border); }
-.ctrl-row label { font-size:10px; letter-spacing:.08em; color:var(--text-dim);
-                  text-transform:uppercase; }
-.ramp-track { display:flex; gap:0; border-radius:6px; overflow:hidden;
-              border:1px solid var(--border); }
-.ramp-btn   { padding:6px 14px; background:var(--surface-2); border:none;
-              color:var(--text-dim); font-family:'DM Mono',monospace;
-              font-size:11px; cursor:pointer; transition:all .2s; }
-.ramp-btn.active { background:var(--accent-dim); color:var(--accent); }
-.ramp-btn:hover:not(.active) { background:var(--surface); color:var(--text); }
-
-.scale-event { background:color-mix(in srgb,var(--accent) 8%,transparent);
-               border:1px solid var(--accent-dim); border-radius:8px;
-               padding:8px 12px; margin-bottom:8px; font-size:11px;
-               display:flex; align-items:center; gap:8px; }
-.scale-icon  { font-size:16px; }
-.scale-text  { flex:1; color:var(--text); line-height:1.4; }
-.scale-ts    { font-size:10px; color:var(--text-dim); white-space:nowrap; }
-
-.req-row { display:flex; align-items:center; gap:8px; padding:3px 0;
-           border-bottom:.5px solid var(--border); font-size:11px; }
-.rm { color:var(--accent); min-width:42px; }
-.rp { color:var(--text); flex:1; overflow:hidden;
-      text-overflow:ellipsis; white-space:nowrap; }
-.rs { min-width:36px; text-align:right; }
-.rl { min-width:50px; text-align:right; color:var(--text-dim); }
-.s200{color:var(--green);} .s4xx{color:var(--amber);} .s5xx{color:var(--red);}
-.latok{color:var(--green);} .latwarn{color:var(--amber);} .latbad{color:var(--red);}
-
-.progress-bar { height:4px; border-radius:2px; background:var(--border);
-                margin-top:8px; overflow:hidden; }
-.progress-fill{ height:100%; border-radius:2px; background:var(--accent);
-                transition:width .5s; }
+.kpi-strip{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px;}
+.kpi-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;
+          padding:12px 14px;border-left-width:3px;}
+.kpi-label{font-size:10px;letter-spacing:.08em;color:var(--text-dim);
+           text-transform:uppercase;margin-bottom:5px;}
+.kpi-val{font-family:'Syne',sans-serif;font-size:26px;font-weight:700;
+         color:var(--text-bright);line-height:1;}
+.kpi-sub{font-size:10px;color:var(--text-dim);margin-top:3px;}
+.ctrl-row{display:flex;align-items:center;gap:14px;flex-wrap:wrap;
+          padding:12px 20px;background:var(--surface);border-bottom:1px solid var(--border);}
+.ctrl-row label{font-size:10px;letter-spacing:.08em;color:var(--text-dim);text-transform:uppercase;}
+.ramp-track{display:flex;gap:0;border-radius:6px;overflow:hidden;border:1px solid var(--border);}
+.ramp-btn{padding:6px 14px;background:var(--surface-2);border:none;color:var(--text-dim);
+          font-family:'DM Mono',monospace;font-size:11px;cursor:pointer;transition:all .2s;}
+.ramp-btn.active{background:var(--accent-dim);color:var(--accent);}
+.ramp-btn:hover:not(.active){background:var(--surface);color:var(--text);}
+.obs-event{background:color-mix(in srgb,var(--accent) 8%,transparent);
+           border:1px solid var(--accent-dim);border-radius:8px;
+           padding:8px 12px;margin-bottom:8px;font-size:11px;
+           display:flex;align-items:center;gap:8px;}
+.obs-icon{font-size:14px;}
+.obs-text{flex:1;color:var(--text);line-height:1.4;}
+.obs-ts{font-size:10px;color:var(--text-dim);white-space:nowrap;}
+.req-row{display:flex;align-items:center;gap:8px;padding:3px 0;
+         border-bottom:.5px solid var(--border);font-size:11px;}
+.rm{color:var(--accent);min-width:42px;}
+.rp{color:var(--text);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.rs{min-width:36px;text-align:right;}
+.rl{min-width:50px;text-align:right;color:var(--text-dim);}
+.s200{color:var(--green);}.s4xx{color:var(--amber);}.s5xx{color:var(--red);}
+.latok{color:var(--green);}.latwarn{color:var(--amber);}.latbad{color:var(--red);}
+.progress-bar{height:4px;border-radius:2px;background:var(--border);
+              margin-top:6px;overflow:hidden;}
+.progress-fill{height:100%;border-radius:2px;background:var(--accent);transition:width .4s;}
 </style>
 </head>
 <body>
@@ -95,15 +74,15 @@
   </div>
 </header>
 
-<!-- ── Controls ──────────────────────────────────────────────────────────── -->
+<!-- Controls -->
 <div class="ctrl-row">
   <div style="display:flex;flex-direction:column;gap:4px;">
     <label>Target URL</label>
     <input id="cfg-url" type="text" value="https://msml605.onrender.com"
-           style="width:280px;font-size:12px;" placeholder="https://your-app-runner-url"/>
+           style="width:290px;font-size:12px;"/>
   </div>
   <div style="display:flex;flex-direction:column;gap:4px;">
-    <label>Load profile</label>
+    <label>Load profile (virtual users)</label>
     <div class="ramp-track">
       <button class="ramp-btn active" data-users="5"   onclick="setProfile(this)">Light (5)</button>
       <button class="ramp-btn"        data-users="20"  onclick="setProfile(this)">Medium (20)</button>
@@ -113,13 +92,13 @@
   </div>
   <div style="display:flex;flex-direction:column;gap:4px;">
     <label>Duration (s)</label>
-    <input id="cfg-dur" type="number" value="60" min="10" max="300" step="10"
-           style="width:80px;font-size:12px;"/>
+    <input id="cfg-dur"  type="number" value="60"  min="10" max="300" step="10"
+           style="width:76px;font-size:12px;"/>
   </div>
   <div style="display:flex;flex-direction:column;gap:4px;">
     <label>Ramp time (s)</label>
-    <input id="cfg-ramp" type="number" value="15" min="0" max="60" step="5"
-           style="width:80px;font-size:12px;"/>
+    <input id="cfg-ramp" type="number" value="15"  min="0"  max="60"  step="5"
+           style="width:76px;font-size:12px;"/>
   </div>
   <div style="margin-left:auto;display:flex;gap:8px;align-items:flex-end;">
     <button class="btn btn-primary" id="btn-init"  onclick="initModel()">⬡ Init model</button>
@@ -129,21 +108,22 @@
   </div>
 </div>
 
-<!-- Progress bar -->
-<div style="padding:0 20px;background:var(--surface);border-bottom:1px solid var(--border);">
+<!-- Progress -->
+<div style="padding:0 20px 8px;background:var(--surface);border-bottom:1px solid var(--border);">
   <div class="progress-bar"><div class="progress-fill" id="progress" style="width:0%"></div></div>
-  <div style="display:flex;justify-content:space-between;padding:4px 0 6px;">
-    <span id="status-text" style="font-size:11px;color:var(--text-dim);">Ready — initialise the model first</span>
+  <div style="display:flex;justify-content:space-between;padding:4px 0 0;">
+    <span id="status-text" style="font-size:11px;color:var(--text-dim);">
+      Ready — click Init model, then Start test
+    </span>
     <span id="elapsed-text" style="font-size:11px;color:var(--text-dim);"></span>
   </div>
 </div>
 
 <main class="grid">
 
-  <!-- LEFT COLUMN -->
+  <!-- LEFT -->
   <div class="col-left">
 
-    <!-- KPI strip -->
     <div class="kpi-strip">
       <div class="kpi-card" style="border-left-color:var(--green);">
         <div class="kpi-label">Req / sec</div>
@@ -167,16 +147,14 @@
       </div>
     </div>
 
-    <!-- Throughput -->
     <div class="panel">
       <div class="panel-header">
         <span class="panel-title">THROUGHPUT OVER TIME</span>
-        <span class="panel-sub">real requests/sec measured client-side</span>
+        <span class="panel-sub">real requests/sec — measured client-side</span>
       </div>
       <div id="plot-tp" class="plot-area" style="height:200px;"></div>
     </div>
 
-    <!-- Latency -->
     <div class="panel">
       <div class="panel-header">
         <span class="panel-title">LATENCY PERCENTILES</span>
@@ -185,21 +163,19 @@
       <div id="plot-lat" class="plot-area" style="height:190px;"></div>
     </div>
 
-    <!-- Error rate -->
     <div class="panel">
       <div class="panel-header">
         <span class="panel-title">ERROR RATE</span>
-        <span class="panel-sub">% failed requests per second window</span>
+        <span class="panel-sub">% failed requests — threshold at 1%</span>
       </div>
       <div id="plot-err" class="plot-area" style="height:150px;"></div>
     </div>
 
   </div>
 
-  <!-- RIGHT COLUMN -->
+  <!-- RIGHT -->
   <div class="col-right">
 
-    <!-- Summary cards -->
     <div class="panel">
       <div class="panel-header">
         <span class="panel-title">TEST SUMMARY</span>
@@ -233,7 +209,6 @@
       </div>
     </div>
 
-    <!-- Latency histogram -->
     <div class="panel">
       <div class="panel-header">
         <span class="panel-title">LATENCY DISTRIBUTION</span>
@@ -242,21 +217,18 @@
       <div id="plot-hist" class="plot-area" style="height:170px;"></div>
     </div>
 
-    <!-- Scale events -->
     <div class="panel">
       <div class="panel-header">
         <span class="panel-title">OBSERVATIONS</span>
         <span class="log-count" id="obs-count">0</span>
       </div>
-      <div style="padding:10px 14px;max-height:120px;overflow-y:auto;"
-           id="obs-log">
+      <div style="padding:10px 14px;max-height:130px;overflow-y:auto;" id="obs-log">
         <div style="font-size:11px;color:var(--text-dim);">
-          Observations will appear here during the test.
+          Automatic observations will appear during the test.
         </div>
       </div>
     </div>
 
-    <!-- Live request log -->
     <div class="panel panel--log">
       <div class="panel-header">
         <span class="panel-title">LIVE REQUEST LOG</span>
@@ -283,21 +255,20 @@ let rampTime     = 15;
 let running        = false;
 let modelReady     = false;
 let startTime      = null;
-let testTimer      = null;
 let workerTimers   = [];
-let windowRequests = [];   // raw latency measurements in current 1s window
-let allLatencies   = [];   // all latencies for histogram + percentiles
+let windowBucket   = [];
+let allLatencies   = [];
 let totalRequests  = 0;
 let totalFailures  = 0;
 let obsCount       = 0;
-let prevRps        = 0;
+let reqDisplayCount= 0;
 let prevP99        = 0;
+let prevErrPct     = 0;
+let prevRps        = 0;
 
-// Time-series accumulators (last 120 data points)
-const MAX_POINTS = 120;
-const ts   = [], rps = [], p50 = [], p95 = [], p99 = [], err = [];
+const MAX_PTS = 120;
+const TS=[], RPS=[], P50=[], P95=[], P99=[], ERR=[];
 
-// Sample feature vectors for /api/predict
 const SAMPLES = [
   [9.1,0.0,11.0,44.0,18.2,0.0,3.1,0.0,14.6],
   [10.8,0.0,12.1,29.8,17.9,0.0,1.6,20.5,7.2],
@@ -309,384 +280,356 @@ const SAMPLES = [
   [4.4,0.0,3.2,9.8,14.5,0.0,0.1,18.9,49.0],
 ];
 
-// ── Plotly helpers ────────────────────────────────────────────────────────────
-function pt() {
-  const dark = document.documentElement.getAttribute('data-theme') === 'dark';
-  return { paper:'rgba(0,0,0,0)', plot:'rgba(0,0,0,0)',
-           grid: dark?'#1e2233':'#e5e7ef', text: dark?'#6b7394':'#8890aa' };
+// ── Plotly ────────────────────────────────────────────────────────────────────
+function pt(){
+  const d=document.documentElement.getAttribute('data-theme')==='dark';
+  return{paper:'rgba(0,0,0,0)',plot:'rgba(0,0,0,0)',
+         grid:d?'#1e2233':'#e5e7ef',text:d?'#6b7394':'#8890aa'};
 }
-function blay(yl, extra) {
-  const t = pt();
-  return {
-    paper_bgcolor:t.paper, plot_bgcolor:t.plot,
+function bl(yl,ex){
+  const t=pt();
+  return{paper_bgcolor:t.paper,plot_bgcolor:t.plot,
     font:{family:"'DM Mono',monospace",color:t.text,size:10},
-    xaxis:{gridcolor:t.grid,zeroline:false,color:t.text,...(extra?.xaxis||{})},
+    xaxis:{gridcolor:t.grid,zeroline:false,color:t.text,...(ex?.xaxis||{})},
     yaxis:{gridcolor:t.grid,zeroline:false,color:t.text,
-           title:{text:yl,font:{size:10}},...(extra?.yaxis||{})},
-    margin:{l:46,r:12,t:8,b:34},
-    showlegend:true,
-    legend:{bgcolor:'rgba(0,0,0,0)',font:{size:9},x:0,y:1},
-    ...(extra||{}),
-  };
+           title:{text:yl,font:{size:10}},...(ex?.yaxis||{})},
+    margin:{l:46,r:12,t:8,b:34},showlegend:true,
+    legend:{bgcolor:'rgba(0,0,0,0)',font:{size:9},x:0,y:1},...(ex||{})};
 }
-const CFG = {displayModeBar:false,responsive:true};
+const CFG={displayModeBar:false,responsive:true};
 
-function initPlots() {
+function initPlots(){
   Plotly.newPlot('plot-tp',[
     {x:[],y:[],name:'req/s',type:'scatter',mode:'lines',fill:'tozeroy',
      fillcolor:'rgba(127,119,221,0.1)',line:{color:'#7F77DD',width:2}},
-  ], blay('req/s'), CFG);
+  ],bl('req/s'),CFG);
 
   Plotly.newPlot('plot-lat',[
     {x:[],y:[],name:'p50',type:'scatter',mode:'lines',line:{color:'#1D9E75',width:2}},
     {x:[],y:[],name:'p95',type:'scatter',mode:'lines',line:{color:'#BA7517',width:1.8,dash:'dot'}},
     {x:[],y:[],name:'p99',type:'scatter',mode:'lines',line:{color:'#E24B4A',width:1.8,dash:'dash'}},
-  ], blay('ms'), CFG);
+  ],bl('ms'),CFG);
 
   Plotly.newPlot('plot-err',[
     {x:[],y:[],name:'error %',type:'bar',marker:{color:[]},width:0.6},
-  ], {...blay('error %'),
+  ],{...bl('error %'),
     shapes:[{type:'line',xref:'paper',x0:0,x1:1,y0:1,y1:1,
-             line:{color:'#E24B4A',width:1,dash:'dot'}}]}, CFG);
+             line:{color:'#E24B4A',width:1,dash:'dot'}}]},CFG);
 
   Plotly.newPlot('plot-hist',[
-    {x:[],type:'histogram',marker:{color:'#7F77DD',opacity:0.8},
-     xbins:{size:20},name:'requests'},
-  ], {
-    ...blay('count',{xaxis:{title:{text:'latency (ms)',font:{size:10}}}}),
-    bargap:0.05,
-    margin:{l:44,r:10,t:8,b:38},
-  }, CFG);
+    {x:[],type:'histogram',marker:{color:'#7F77DD',opacity:0.8},xbins:{size:25}},
+  ],{...bl('count',{xaxis:{title:{text:'latency (ms)',font:{size:10}}}}),
+    bargap:0.05,margin:{l:44,r:10,t:8,b:38}},CFG);
 }
 
-// ── Percentile helper ─────────────────────────────────────────────────────────
-function pct(arr, p) {
-  if (!arr.length) return 0;
-  const s = [...arr].sort((a,b)=>a-b);
-  return s[Math.min(Math.floor(s.length * p / 100), s.length-1)];
+// ── Percentile ────────────────────────────────────────────────────────────────
+function pct(arr,p){
+  if(!arr.length)return 0;
+  const s=[...arr].sort((a,b)=>a-b);
+  return s[Math.min(Math.floor(s.length*p/100),s.length-1)];
 }
 
-// ── Single prediction request ─────────────────────────────────────────────────
-async function fireRequest() {
-  const features = SAMPLES[Math.floor(Math.random() * SAMPLES.length)];
-  const t0 = performance.now();
-  try {
-    const r = await fetch(`${targetUrl}/api/predict`, {
-      method: 'POST',
-      headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({features}),
+// ── Single request ────────────────────────────────────────────────────────────
+async function fireRequest(){
+  const features=SAMPLES[Math.floor(Math.random()*SAMPLES.length)];
+  const t0=performance.now();
+  let status=0,ok=false;
+  try{
+    const r=await fetch(`${targetUrl}/api/predict`,{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({features}),
     });
-    const latency = performance.now() - t0;
-    const ok = r.status === 200;
-    if (!ok) totalFailures++;
-    totalRequests++;
-    windowRequests.push({latency, ok, status: r.status});
-    allLatencies.push(latency);
-    addReqRow('/api/predict', r.status, latency);
-  } catch (e) {
-    const latency = performance.now() - t0;
-    totalFailures++;
-    totalRequests++;
-    windowRequests.push({latency, ok:false, status:0});
-    allLatencies.push(latency);
-    addReqRow('/api/predict', 0, latency);
-  }
+    status=r.status; ok=(r.status===200);
+  }catch(e){ status=0; ok=false; }
+  const lat=performance.now()-t0;
+  if(!ok)totalFailures++;
+  totalRequests++;
+  windowBucket.push({lat,ok,status});
+  allLatencies.push(lat);
+  logReq(status,lat);
 }
 
-// ── Worker: one "virtual user" fires requests sequentially ───────────────────
-async function worker(userId) {
-  while (running) {
+// ── Virtual user worker ───────────────────────────────────────────────────────
+function sleep(ms){return new Promise(r=>setTimeout(r,ms));}
+async function worker(){
+  while(running){
     await fireRequest();
-    // Small jitter between requests so not all users fire simultaneously
-    await sleep(50 + Math.random() * 150);
+    await sleep(80+Math.random()*120);
   }
 }
 
-function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+// ── 1-second aggregation ──────────────────────────────────────────────────────
+function aggregate(){
+  const w=windowBucket.splice(0);
+  if(!w.length)return;
+  const now=new Date().toLocaleTimeString('en-GB',{hour12:false});
+  const lats=w.map(r=>r.lat);
+  const failed=w.filter(r=>!r.ok).length;
+  const errPct=(failed/w.length*100);
+  const curRps=w.length;
+  const curP50=pct(lats,50);
+  const curP95=pct(lats,95);
+  const curP99=pct(lats,99);
 
-// ── Metrics aggregation (runs every 1s) ───────────────────────────────────────
-function aggregateWindow() {
-  const now = new Date().toLocaleTimeString('en-GB',{hour12:false});
-  const w   = windowRequests.splice(0); // consume window
-  if (!w.length) return;
+  [TS,RPS,P50,P95,P99,ERR].forEach(a=>{if(a.length>=MAX_PTS)a.shift();});
+  TS.push(now);RPS.push(curRps);P50.push(+curP50.toFixed(0));
+  P95.push(+curP95.toFixed(0));P99.push(+curP99.toFixed(0));
+  ERR.push(+errPct.toFixed(2));
 
-  const lats    = w.map(r => r.latency);
-  const failed  = w.filter(r => !r.ok).length;
-  const errPct  = (failed / w.length * 100);
-  const curRps  = w.length; // 1s window → count = req/s
-  const curP50  = pct(lats, 50);
-  const curP95  = pct(lats, 95);
-  const curP99  = pct(lats, 99);
+  Plotly.restyle('plot-tp', {x:[TS],y:[RPS]},[0]);
+  Plotly.restyle('plot-lat',{x:[TS,TS,TS],y:[P50,P95,P99]},[0,1,2]);
+  const ec=ERR.map(v=>v===0?'rgba(29,158,117,.6)':v<1?'rgba(186,117,23,.7)':'rgba(224,74,74,.75)');
+  Plotly.restyle('plot-err',{x:[TS],y:[ERR],'marker.color':[ec]},[0]);
+  Plotly.restyle('plot-hist',{x:[allLatencies]},[0]);
 
-  // Push to series
-  [ts,rps,p50,p95,p99,err].forEach(a => { if (a.length >= MAX_POINTS) a.shift(); });
-  ts.push(now); rps.push(curRps); p50.push(+curP50.toFixed(0));
-  p95.push(+curP95.toFixed(0)); p99.push(+curP99.toFixed(0));
-  err.push(+errPct.toFixed(2));
+  // KPI
+  kpi('kpi-rps',curRps,'live');
+  kpi('kpi-p50',curP50.toFixed(0),'ms');
+  kpi('kpi-p99',curP99.toFixed(0),'ms',
+    curP99>500?'var(--red)':curP99>200?'var(--amber)':null);
+  kpi('kpi-err',errPct.toFixed(2),'%',
+    errPct>1?'var(--red)':errPct>0?'var(--amber)':'var(--green)');
 
-  // Update plots
-  Plotly.restyle('plot-tp',  {x:[ts],y:[rps]}, [0]);
-  Plotly.restyle('plot-lat', {x:[ts,ts,ts],y:[p50,p95,p99]}, [0,1,2]);
-  const ec = err.map(v=>v===0?'rgba(29,158,117,.6)':v<1?'rgba(186,117,23,.7)':'rgba(224,74,74,.75)');
-  Plotly.restyle('plot-err', {x:[ts],y:[err],'marker.color':[ec]}, [0]);
-  Plotly.restyle('plot-hist',{x:[allLatencies]}, [0]);
+  document.getElementById('hdr-total').textContent=totalRequests.toLocaleString();
+  document.getElementById('hdr-fail').textContent=totalFailures.toLocaleString();
 
-  // KPI cards
-  setKpi('kpi-rps', curRps, `${targetUsers} virtual users`);
-  setKpi('kpi-p50', curP50.toFixed(0), 'ms');
-  setKpi('kpi-p99', curP99.toFixed(0), 'ms',
-    curP99 > 500 ? 'var(--red)' : curP99 > 200 ? 'var(--amber)' : null);
-  setKpi('kpi-err', errPct.toFixed(2), '%',
-    errPct > 1 ? 'var(--red)' : errPct > 0 ? 'var(--amber)' : 'var(--green)');
+  const pill=document.getElementById('pill-health');
+  if(errPct>5){pill.className='pill drifting';pill.textContent='DEGRADED';}
+  else if(errPct>0){pill.className='pill';pill.textContent='WARNING';}
+  else{pill.className='pill ok';pill.textContent='RUNNING';}
 
-  // Header counters
-  document.getElementById('hdr-total').textContent = totalRequests.toLocaleString();
-  document.getElementById('hdr-fail').textContent  = totalFailures.toLocaleString();
+  document.getElementById('s-peak-rps').textContent=Math.max(...RPS).toFixed(0)+' req/s';
+  document.getElementById('s-median').textContent=pct(allLatencies,50).toFixed(0)+' ms';
+  document.getElementById('s-total').textContent=totalRequests.toLocaleString();
+  document.getElementById('s-fail').textContent=totalFailures.toLocaleString();
+  document.getElementById('s-p95').textContent=pct(allLatencies,95).toFixed(0)+' ms';
+  document.getElementById('s-p99').textContent=pct(allLatencies,99).toFixed(0)+' ms';
 
-  // Health pill
-  const pill = document.getElementById('pill-health');
-  if (errPct > 5) { pill.className='pill drifting'; pill.textContent='DEGRADED'; }
-  else if (errPct > 0) { pill.className='pill'; pill.textContent='WARNING'; }
-  else { pill.className='pill ok'; pill.textContent='HEALTHY'; }
-
-  // Summary stats (running)
-  document.getElementById('s-peak-rps').textContent =
-    Math.max(...rps).toFixed(0) + ' req/s';
-  document.getElementById('s-median').textContent =
-    pct(allLatencies, 50).toFixed(0) + ' ms';
-  document.getElementById('s-total').textContent =
-    totalRequests.toLocaleString();
-  document.getElementById('s-fail').textContent =
-    totalFailures.toLocaleString();
-  document.getElementById('s-p95').textContent =
-    pct(allLatencies, 95).toFixed(0) + ' ms';
-  document.getElementById('s-p99').textContent =
-    pct(allLatencies, 99).toFixed(0) + ' ms';
-
-  // Auto-observations
-  checkObservations(curRps, curP99, errPct);
-  prevRps = curRps; prevP99 = curP99;
+  autoObserve(curRps,curP99,errPct);
+  prevRps=curRps;prevP99=curP99;prevErrPct=errPct;
 }
 
-function setKpi(id, val, sub, color) {
-  const el = document.getElementById(id);
-  el.textContent = val;
-  if (color) el.style.color = color;
-  else el.style.color = 'var(--text-bright)';
+function kpi(id,val,sub,color){
+  const el=document.getElementById(id);
+  el.textContent=val;
+  el.style.color=color||'var(--text-bright)';
 }
 
-// ── Automatic observations ─────────────────────────────────────────────────────
-function checkObservations(curRps, curP99, errPct) {
-  const observations = [];
-  if (curP99 > 500 && prevP99 <= 500)
-    observations.push({icon:'▲', text:'p99 latency exceeded 500ms — saturation point reached', c:'var(--amber)'});
-  if (errPct > 1 && err[err.length-2] <= 1)
-    observations.push({icon:'⚠', text:'Error rate crossed 1% threshold', c:'var(--red)'});
-  if (errPct === 0 && err[err.length-2] > 1)
-    observations.push({icon:'✓', text:'Error rate recovered to 0%', c:'var(--green)'});
-  if (curRps > prevRps * 1.5 && curRps > 10)
-    observations.push({icon:'↑', text:`Throughput spike: ${prevRps} → ${curRps} req/s`, c:'var(--accent)'});
-
-  observations.forEach(o => addObservation(o.icon, o.text, o.c));
+// ── Auto-observations ─────────────────────────────────────────────────────────
+function autoObserve(curRps,curP99,errPct){
+  if(curP99>500&&prevP99<=500)
+    obs('▲','p99 latency exceeded 500ms — saturation point reached','var(--amber)');
+  if(errPct>1&&prevErrPct<=1)
+    obs('⚠','Error rate crossed 1% threshold','var(--red)');
+  if(errPct===0&&prevErrPct>1)
+    obs('✓','Error rate recovered to 0%','var(--green)');
+  if(curRps>prevRps*1.8&&curRps>15&&prevRps>0)
+    obs('↑',`Throughput spike: ${prevRps} → ${curRps} req/s`,'var(--accent)');
 }
-
-function addObservation(icon, text, color) {
+function obs(icon,text,color){
   obsCount++;
-  document.getElementById('obs-count').textContent = obsCount;
-  const log = document.getElementById('obs-log');
-  if (obsCount === 1) log.innerHTML = '';
-  const ts  = new Date().toLocaleTimeString('en-GB',{hour12:false});
-  const row = document.createElement('div');
-  row.className = 'scale-event';
-  row.style.borderColor = 'color-mix(in srgb,' + color + ' 40%,transparent)';
-  row.innerHTML = `<span class="scale-icon" style="color:${color}">${icon}</span>
-    <span class="scale-text">${text}</span>
-    <span class="scale-ts">${ts}</span>`;
-  log.prepend(row);
+  document.getElementById('obs-count').textContent=obsCount;
+  const log=document.getElementById('obs-log');
+  if(obsCount===1)log.innerHTML='';
+  const ts=new Date().toLocaleTimeString('en-GB',{hour12:false});
+  const el=document.createElement('div');
+  el.className='obs-event';
+  el.style.borderColor=`color-mix(in srgb,${color} 40%,transparent)`;
+  el.innerHTML=`<span class="obs-icon" style="color:${color}">${icon}</span>
+    <span class="obs-text">${text}</span>
+    <span class="obs-ts">${ts}</span>`;
+  log.prepend(el);
 }
 
-// ── Live request log ───────────────────────────────────────────────────────────
-let reqDisplayCount = 0;
-function addReqRow(path, status, latency) {
+// ── Request log ───────────────────────────────────────────────────────────────
+function logReq(status,lat){
   reqDisplayCount++;
-  document.getElementById('req-count').textContent =
-    `${totalRequests.toLocaleString()} requests`;
-  // Only render 1 in 5 to avoid overwhelming the DOM
-  if (reqDisplayCount % 5 !== 0) return;
-  const body = document.getElementById('req-log');
-  if (reqDisplayCount === 5) body.innerHTML = '';
-  const sClass = status===200?'s200':status===0?'s5xx':status<500?'s4xx':'s5xx';
-  const lClass = latency<100?'latok':latency<300?'latwarn':'latbad';
-  const statusTxt = status===0 ? 'ERR' : status;
-  const t  = new Date().toLocaleTimeString('en-GB',{hour12:false});
-  const row = document.createElement('div');
-  row.className = 'req-row';
-  row.innerHTML = `<span class="log-ts">${t}</span>
+  document.getElementById('req-count').textContent=`${totalRequests.toLocaleString()} requests`;
+  if(reqDisplayCount%4!==0)return;
+  const body=document.getElementById('req-log');
+  if(reqDisplayCount===4)body.innerHTML='';
+  const sc=status===200?'s200':status===0?'s5xx':status<500?'s4xx':'s5xx';
+  const lc=lat<100?'latok':lat<300?'latwarn':'latbad';
+  const st=status===0?'ERR':status;
+  const t=new Date().toLocaleTimeString('en-GB',{hour12:false});
+  const row=document.createElement('div');
+  row.className='req-row';
+  row.innerHTML=`<span class="log-ts">${t}</span>
     <span class="rm">POST</span>
-    <span class="rp">${path}</span>
-    <span class="rs ${sClass}">${statusTxt}</span>
-    <span class="rl ${lClass}">${latency.toFixed(0)}ms</span>`;
+    <span class="rp">/api/predict</span>
+    <span class="rs ${sc}">${st}</span>
+    <span class="rl ${lc}">${lat.toFixed(0)}ms</span>`;
   body.prepend(row);
-  while (body.children.length > 60) body.removeChild(body.lastChild);
+  while(body.children.length>60)body.removeChild(body.lastChild);
 }
 
-// ── Initialize model ──────────────────────────────────────────────────────────
-async function initModel() {
-  targetUrl = document.getElementById('cfg-url').value.trim().replace(/\/$/, '');
-  document.getElementById('hdr-endpoint').textContent = targetUrl;
-  document.getElementById('btn-init').disabled = true;
-  setStatus('Initialising model on server...');
+// ── Init model ────────────────────────────────────────────────────────────────
+async function initModel(){
+  targetUrl=document.getElementById('cfg-url').value.trim().replace(/\/$/,'');
+  document.getElementById('hdr-endpoint').textContent=targetUrl;
+  document.getElementById('btn-init').disabled=true;
+  setStatus('Pinging server...');
 
-  try {
-    const r = await fetch(`${targetUrl}/api/initialize`, {
-      method: 'POST',
-      headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({
-        feature_x:'gas', feature_y:'forecast_intensity',
-        ks_threshold:0.10, n_init:10, n_monthly:3, speed:0.0,
+  // Wake-up ping first (handles Render cold start)
+  try{
+    await fetch(`${targetUrl}/api/status`);
+  }catch(_){}
+
+  setStatus('Initialising model — loading data and fitting PCA...');
+
+  // AbortController instead of AbortSignal.timeout() for browser compatibility
+  const controller=new AbortController();
+  const tid=setTimeout(()=>controller.abort(),120000);
+
+  try{
+    const r=await fetch(`${targetUrl}/api/initialize`,{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        feature_x:'gas',feature_y:'forecast_intensity',
+        ks_threshold:0.10,n_init:10,n_monthly:3,speed:0.0,
       }),
-      signal: AbortSignal.timeout(90000),
+      signal:controller.signal,
     });
-    if (!r.ok) throw new Error(`Server returned ${r.status}`);
-    const j = await r.json();
-    if (!j.data?.pc1_range) throw new Error('Unexpected response from /api/initialize');
-    modelReady = true;
-    setStatus('Model ready — click Start test to begin');
-    document.getElementById('btn-start').disabled = false;
-    document.getElementById('btn-reset').disabled = false;
-    addObservation('✓', `Model initialised at ${targetUrl}`, 'var(--green)');
-  } catch(e) {
-    setStatus(`Init failed: ${e.message}`);
-    document.getElementById('btn-init').disabled = false;
-    addObservation('✗', `Init failed: ${e.message}`, 'var(--red)');
+    clearTimeout(tid);
+    if(!r.ok)throw new Error(`Server returned ${r.status}`);
+    const j=await r.json();
+    if(!j.data?.pc1_range)throw new Error('Unexpected response shape');
+    modelReady=true;
+    setStatus('Model ready — set load profile and click Start test');
+    document.getElementById('btn-start').disabled=false;
+    document.getElementById('btn-reset').disabled=false;
+    obs('✓',`Model initialised at ${targetUrl}`,'var(--green)');
+  }catch(e){
+    clearTimeout(tid);
+    const msg=e.name==='AbortError'?'Request timed out after 120s':e.message;
+    setStatus(`Init failed: ${msg} — try again`);
+    document.getElementById('btn-init').disabled=false;
+    obs('✗',`Init failed: ${msg}`,'var(--red)');
   }
 }
 
 // ── Start test ────────────────────────────────────────────────────────────────
-async function startTest() {
-  if (!modelReady) { alert('Initialise the model first'); return; }
-  running = true;
-  startTime = Date.now();
+function startTest(){
+  if(!modelReady){
+    // Server may already have model in memory from a previous session
+    obs('→','Skipping init — using server model already in memory','var(--accent)');
+    modelReady=true;
+  }
+  running=true;
+  startTime=Date.now();
+  testDuration=parseInt(document.getElementById('cfg-dur').value);
+  rampTime=parseInt(document.getElementById('cfg-ramp').value);
 
-  testDuration = parseInt(document.getElementById('cfg-dur').value);
-  rampTime     = parseInt(document.getElementById('cfg-ramp').value);
+  document.getElementById('btn-start').disabled=true;
+  document.getElementById('btn-stop').disabled=false;
+  document.getElementById('btn-init').disabled=true;
 
-  document.getElementById('btn-start').disabled = true;
-  document.getElementById('btn-stop').disabled  = false;
-  document.getElementById('btn-init').disabled  = true;
-  document.getElementById('pill-health').className   = 'pill ok';
-  document.getElementById('pill-health').textContent = 'RUNNING';
+  obs('▶',`Test started — ${targetUsers} virtual users · ${testDuration}s duration`,'var(--accent)');
 
-  addObservation('▶', `Load test started — ${targetUsers} virtual users, ${testDuration}s`, 'var(--accent)');
-
-  // Ramp: start workers gradually over rampTime seconds
-  const spawnInterval = (rampTime * 1000) / targetUsers;
-  for (let i = 0; i < targetUsers; i++) {
-    const t = setTimeout(() => { if (running) worker(i); },
-                         Math.round(i * spawnInterval));
+  // Spawn workers with ramp
+  const spawnGap=(rampTime*1000)/Math.max(targetUsers,1);
+  for(let i=0;i<targetUsers;i++){
+    const t=setTimeout(()=>{if(running)worker();},Math.round(i*spawnGap));
     workerTimers.push(t);
   }
 
-  // Aggregate metrics every second
-  const aggTimer = setInterval(aggregateWindow, 1000);
-  workerTimers.push(aggTimer);
+  // Aggregate every second
+  const agg=setInterval(aggregate,1000);
+  workerTimers.push(agg);
 
-  // Progress bar + elapsed
-  const progTimer = setInterval(() => {
-    const elapsed = (Date.now() - startTime) / 1000;
-    const pct = Math.min(100, elapsed / testDuration * 100);
-    document.getElementById('progress').style.width = pct + '%';
-    document.getElementById('elapsed-text').textContent =
-      `${elapsed.toFixed(0)}s / ${testDuration}s`;
+  // Progress + elapsed
+  const prog=setInterval(()=>{
+    const el=(Date.now()-startTime)/1000;
+    document.getElementById('progress').style.width=
+      Math.min(100,el/testDuration*100)+'%';
+    document.getElementById('elapsed-text').textContent=
+      `${el.toFixed(0)}s / ${testDuration}s`;
     setStatus(`Running — ${targetUsers} virtual users · ${totalRequests.toLocaleString()} requests sent`);
-    if (elapsed >= testDuration) stopTest();
-  }, 500);
-  workerTimers.push(progTimer);
+    if(el>=testDuration)stopTest();
+  },500);
+  workerTimers.push(prog);
 }
 
-// ── Stop test ─────────────────────────────────────────────────────────────────
-function stopTest() {
-  running = false;
-  workerTimers.forEach(t => clearTimeout(t));
-  workerTimers.forEach(t => clearInterval(t));
-  workerTimers = [];
-
-  document.getElementById('btn-start').disabled = false;
-  document.getElementById('btn-stop').disabled  = true;
-  document.getElementById('progress').style.width = '100%';
-  document.getElementById('pill-health').className   = 'pill';
-  document.getElementById('pill-health').textContent = 'DONE';
-
-  const dur = ((Date.now() - startTime) / 1000).toFixed(0);
-  setStatus(`Test complete — ${dur}s · ${totalRequests.toLocaleString()} requests · ${totalFailures} failures`);
-  addObservation('⏹', `Test complete. Peak RPS: ${Math.max(...rps).toFixed(0)} · p99: ${pct(allLatencies,99).toFixed(0)}ms`, 'var(--text-dim)');
+// ── Stop ──────────────────────────────────────────────────────────────────────
+function stopTest(){
+  running=false;
+  workerTimers.forEach(t=>{clearTimeout(t);clearInterval(t);});
+  workerTimers=[];
+  document.getElementById('btn-start').disabled=false;
+  document.getElementById('btn-stop').disabled=true;
+  document.getElementById('progress').style.width='100%';
+  document.getElementById('pill-health').className='pill';
+  document.getElementById('pill-health').textContent='DONE';
+  const dur=((Date.now()-startTime)/1000).toFixed(0);
+  setStatus(`Complete — ${dur}s · ${totalRequests.toLocaleString()} requests · ${totalFailures} failures`);
+  if(allLatencies.length)
+    obs('⏹',`Done. Peak ${Math.max(...RPS)} req/s · p50 ${pct(allLatencies,50).toFixed(0)}ms · p99 ${pct(allLatencies,99).toFixed(0)}ms`,'var(--text-dim)');
 }
 
 // ── Reset ─────────────────────────────────────────────────────────────────────
-function resetAll() {
+function resetAll(){
   stopTest();
-  [ts,rps,p50,p95,p99,err].forEach(a=>a.length=0);
-  allLatencies.length = 0;
-  windowRequests.length = 0;
-  totalRequests = totalFailures = obsCount = reqDisplayCount = 0;
-  prevRps = prevP99 = 0; modelReady = false;
+  [TS,RPS,P50,P95,P99,ERR].forEach(a=>a.length=0);
+  allLatencies.length=0;windowBucket.length=0;
+  totalRequests=totalFailures=obsCount=reqDisplayCount=0;
+  prevRps=prevP99=prevErrPct=0;modelReady=false;
 
-  Plotly.restyle('plot-tp',  {x:[[]],y:[[]]}, [0]);
-  Plotly.restyle('plot-lat', {x:[[],[],[]],y:[[],[],[]]}, [0,1,2]);
-  Plotly.restyle('plot-err', {x:[[]],y:[[]]}, [0]);
-  Plotly.restyle('plot-hist',{x:[[]]}, [0]);
+  ['plot-tp','plot-lat','plot-err','plot-hist'].forEach(id=>{
+    try{Plotly.purge(id);}catch(_){}
+  });
+  initPlots();
 
-  ['kpi-rps','kpi-p50','kpi-p99','kpi-err'].forEach(id =>
-    document.getElementById(id).textContent = '—');
-  ['s-peak-rps','s-median','s-total','s-fail','s-p95','s-p99'].forEach(id =>
-    document.getElementById(id).textContent = '—');
-  document.getElementById('hdr-total').textContent = '0';
-  document.getElementById('hdr-fail').textContent  = '0';
-  document.getElementById('req-log').innerHTML =
+  ['kpi-rps','kpi-p50','kpi-p99','kpi-err',
+   's-peak-rps','s-median','s-total','s-fail','s-p95','s-p99'].forEach(id=>{
+    document.getElementById(id).textContent='—';
+  });
+  document.getElementById('hdr-total').textContent='0';
+  document.getElementById('hdr-fail').textContent='0';
+  document.getElementById('req-log').innerHTML=
     '<div class="log-entry log-entry--idle">Awaiting requests...</div>';
-  document.getElementById('obs-log').innerHTML =
-    '<div style="font-size:11px;color:var(--text-dim);">Observations will appear here.</div>';
-  document.getElementById('obs-count').textContent = '0';
-  document.getElementById('req-count').textContent = '0 requests';
-  document.getElementById('progress').style.width  = '0%';
-  document.getElementById('elapsed-text').textContent = '';
-  document.getElementById('pill-health').className   = 'pill';
-  document.getElementById('pill-health').textContent = 'READY';
-  document.getElementById('btn-init').disabled  = false;
-  document.getElementById('btn-start').disabled = true;
-  document.getElementById('btn-reset').disabled = true;
-  setStatus('Ready — initialise the model first');
+  document.getElementById('obs-log').innerHTML=
+    '<div style="font-size:11px;color:var(--text-dim);">Automatic observations will appear during the test.</div>';
+  document.getElementById('obs-count').textContent='0';
+  document.getElementById('req-count').textContent='0 requests';
+  document.getElementById('progress').style.width='0%';
+  document.getElementById('elapsed-text').textContent='';
+  document.getElementById('pill-health').className='pill ok';
+  document.getElementById('pill-health').textContent='READY';
+  document.getElementById('btn-init').disabled=false;
+  document.getElementById('btn-start').disabled=true;
+  document.getElementById('btn-stop').disabled=true;
+  document.getElementById('btn-reset').disabled=true;
+  setStatus('Ready — click Init model, then Start test');
 }
 
 // ── Profile selector ──────────────────────────────────────────────────────────
-function setProfile(btn) {
-  document.querySelectorAll('.ramp-btn').forEach(b => b.classList.remove('active'));
+function setProfile(btn){
+  document.querySelectorAll('.ramp-btn').forEach(b=>b.classList.remove('active'));
   btn.classList.add('active');
-  targetUsers = parseInt(btn.dataset.users);
-  document.getElementById('profile-badge').textContent =
-    `${btn.textContent} users`;
+  targetUsers=parseInt(btn.dataset.users);
+  document.getElementById('profile-badge').textContent=btn.textContent+' users';
 }
 
-function setStatus(msg) {
-  document.getElementById('status-text').textContent = msg;
-}
+function setStatus(msg){document.getElementById('status-text').textContent=msg;}
 
-// ── Theme ─────────────────────────────────────────────────────────────────────
-document.getElementById('theme-toggle').addEventListener('click', () => {
-  const html = document.documentElement;
-  const dark = html.getAttribute('data-theme') === 'dark';
-  html.setAttribute('data-theme', dark ? 'light' : 'dark');
-  document.getElementById('theme-icon').textContent = dark ? '☽' : '☀';
-  const upd = { paper_bgcolor:'rgba(0,0,0,0)', plot_bgcolor:'rgba(0,0,0,0)' };
-  ['plot-tp','plot-lat','plot-err','plot-hist'].forEach(id => {
-    try { Plotly.relayout(id, upd); } catch(_) {}
+// ── Theme toggle ──────────────────────────────────────────────────────────────
+document.getElementById('theme-toggle').addEventListener('click',()=>{
+  const h=document.documentElement;
+  const d=h.getAttribute('data-theme')==='dark';
+  h.setAttribute('data-theme',d?'light':'dark');
+  document.getElementById('theme-icon').textContent=d?'☽':'☀';
+  const u={paper_bgcolor:'rgba(0,0,0,0)',plot_bgcolor:'rgba(0,0,0,0)'};
+  ['plot-tp','plot-lat','plot-err','plot-hist'].forEach(id=>{
+    try{Plotly.relayout(id,u);}catch(_){}
   });
 });
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
-window.addEventListener('load', () => {
+window.addEventListener('load',()=>{
   initPlots();
-  setStatus('Ready — initialise the model first');
+  setStatus('Ready — click Init model, then Start test');
 });
 </script>
 </body>

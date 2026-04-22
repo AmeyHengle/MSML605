@@ -2,7 +2,7 @@
 import asyncio
 import json
 import numpy as np
-from typing import Optional
+from typing import Optional, List
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
@@ -12,7 +12,7 @@ from pipeline import PipelineState
 try:
     from monitoring import get_current_metrics, cloudwatch_stream
     MONITORING_ENABLED = True
-except ImportError:
+except Exception:
     MONITORING_ENABLED = False
 
 app = FastAPI(title='CarbonWatch MLOps')
@@ -47,6 +47,10 @@ class InitConfig(BaseModel):
     speed:        float = 1.0
     models_dir:   str   = 'models'
     data_path:    str   = 'data/historical_data.csv'
+
+
+class PredictRequest(BaseModel):
+    features: List[float]
 
 
 # ── Pipeline routes ───────────────────────────────────────────────────────────
@@ -135,28 +139,31 @@ async def status():
     }
 
 
-# ── Monitoring routes (Page 2) ────────────────────────────────────────────────
+@app.post('/api/predict')
+async def predict(req: PredictRequest):
+    """
+    Standalone inference endpoint for load testing.
+    Accepts 9 energy mix feature values, returns forecast intensity.
+    """
+    if _state is None or _state.model is None:
+        return {'error': 'model not initialized — call /api/initialize first'}
+    X    = np.array(req.features).reshape(1, -1)
+    pred = float(_state.model.predict(X)[0])
+    return {'forecast_intensity': round(pred, 2)}
+
+
+# ── Monitoring routes (Page 2 — requires AWS CloudWatch) ─────────────────────
 @app.get('/api/cloudwatch/metrics')
 async def cw_metrics():
     if not MONITORING_ENABLED:
-        return {'error': 'CloudWatch not configured'}
+        return {'error': 'CloudWatch not configured — set APP_RUNNER_SERVICE_ARN env var'}
     return get_current_metrics()
 
 
 @app.get('/api/cloudwatch/stream')
 async def cw_stream(request: Request):
-    """SSE stream — polls CloudWatch every 10s, pushes to Page 2."""
+    if not MONITORING_ENABLED:
+        async def fallback():
+            yield 'data: {"error": "CloudWatch not configured"}\n\n'
+        return StreamingResponse(fallback(), media_type='text/event-stream')
     return await cloudwatch_stream(request)
-
-
-class PredictRequest(BaseModel):
-    features: list
-
-@app.post('/api/predict')
-async def predict(req: PredictRequest):
-    if _state is None or _state.model is None:
-        return {'error': 'model not initialized'}
-    import numpy as np
-    X    = np.array(req.features).reshape(1, -1)
-    pred = float(_state.model.predict(X)[0])
-    return {'forecast_intensity': round(pred, 2)}
