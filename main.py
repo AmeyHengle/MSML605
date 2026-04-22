@@ -8,7 +8,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from pipeline import PipelineState
-from monitoring import get_current_metrics, cloudwatch_stream
+
+try:
+    from monitoring import get_current_metrics, cloudwatch_stream
+    MONITORING_ENABLED = True
+except ImportError:
+    MONITORING_ENABLED = False
 
 app = FastAPI(title='CarbonWatch MLOps')
 
@@ -133,7 +138,8 @@ async def status():
 # ── Monitoring routes (Page 2) ────────────────────────────────────────────────
 @app.get('/api/cloudwatch/metrics')
 async def cw_metrics():
-    """Single snapshot of current App Runner CloudWatch metrics."""
+    if not MONITORING_ENABLED:
+        return {'error': 'CloudWatch not configured'}
     return get_current_metrics()
 
 

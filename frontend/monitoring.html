@@ -1,0 +1,557 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CarbonWatch — Deployment Monitor</title>
+<link rel="stylesheet" href="style.css">
+<script src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
+<style>
+  .status-dot { width:10px;height:10px;border-radius:50%;display:inline-block;margin-right:6px;flex-shrink:0; }
+  .dot-green  { background:#3ecf8e; }
+  .dot-amber  { background:#f5a623; animation:pulse-a 1.2s ease-in-out infinite; }
+  .dot-red    { background:#e05252; animation:pulse-red 1s ease-in-out infinite; }
+  @keyframes pulse-a  { 0%,100%{opacity:1} 50%{opacity:.5} }
+  .instance-grid { display:flex; gap:8px; flex-wrap:wrap; margin-top:8px; }
+  .instance-card {
+    background:var(--surface-2); border:1px solid var(--border);
+    border-radius:8px; padding:10px 14px; min-width:120px;
+    font-size:11px; color:var(--text-dim);
+  }
+  .instance-card.active { border-color:var(--green); }
+  .inst-id   { font-size:10px; color:var(--text-dim); margin-bottom:4px; }
+  .inst-stat { font-size:18px; font-weight:500; color:var(--text-bright); }
+  .inst-label{ font-size:10px; color:var(--text-dim); margin-top:2px; }
+  .phase-strip {
+    display:flex; gap:0; margin-bottom:16px; border-radius:8px; overflow:hidden;
+    border:1px solid var(--border);
+  }
+  .phase-btn {
+    flex:1; background:var(--surface-2); border:none; color:var(--text-dim);
+    font-family:'DM Mono',monospace; font-size:11px; padding:8px 4px;
+    cursor:pointer; transition:all .2s; letter-spacing:.03em;
+  }
+  .phase-btn.active { background:var(--accent-dim); color:var(--accent); }
+  .phase-btn:hover:not(.active) { background:var(--surface); color:var(--text); }
+  .test-log { font-family:'DM Mono',monospace; font-size:11px; }
+  .tl-row { display:flex; align-items:center; gap:8px; padding:4px 0;
+             border-bottom:0.5px solid var(--border); }
+  .tl-method { color:var(--accent); min-width:48px; }
+  .tl-path   { color:var(--text); flex:1; }
+  .tl-status { min-width:36px; text-align:right; }
+  .tl-lat    { min-width:52px; text-align:right; color:var(--text-dim); }
+  .s200 { color:var(--green); } .s4xx { color:var(--amber); } .s5xx { color:var(--red); }
+  .lat-ok   { color:var(--green); }
+  .lat-warn { color:var(--amber); }
+  .lat-bad  { color:var(--red); }
+  .scale-event {
+    background:color-mix(in srgb,var(--accent) 8%,transparent);
+    border:1px solid var(--accent-dim); border-radius:8px;
+    padding:10px 14px; margin-bottom:10px; font-size:12px;
+    display:flex; align-items:center; gap:10px;
+  }
+  .scale-icon { font-size:18px; }
+  .scale-text { flex:1; color:var(--text); }
+  .scale-ts   { font-size:10px; color:var(--text-dim); }
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-left">
+    <span class="logo-mark">◈</span>
+    <span class="logo-text">CarbonWatch <em>Monitor</em></span>
+  </div>
+  <div class="topbar-center">
+    <div class="month-ticker">
+      <span class="ticker-label">SERVICE</span>
+      <span class="ticker-value" id="hdr-service">AWS App Runner</span>
+    </div>
+    <div class="month-ticker">
+      <span class="ticker-label">STATUS</span>
+      <span class="ticker-value" id="hdr-status" style="color:var(--green);">RUNNING</span>
+    </div>
+    <div class="month-ticker">
+      <span class="ticker-label">INSTANCES</span>
+      <span class="ticker-value" id="hdr-instances">1</span>
+    </div>
+  </div>
+  <div class="topbar-right">
+    <div class="pill ok" id="pill-health">HEALTHY</div>
+    <button class="theme-toggle" id="theme-toggle" title="Toggle theme">
+      <span id="theme-icon">☀</span>
+    </button>
+    <a href="index.html" style="font-size:11px;color:var(--text-dim);text-decoration:none;padding:4px 10px;border:1px solid var(--border);border-radius:6px;">
+      ← Pipeline
+    </a>
+  </div>
+</header>
+
+<section class="controls-bar" style="gap:12px;align-items:center;">
+  <span style="font-size:11px;color:var(--text-dim);letter-spacing:.08em;text-transform:uppercase;">Load test phase</span>
+  <div class="phase-strip" style="flex:1;max-width:600px;">
+    <button class="phase-btn active" id="ph-idle"    onclick="setPhase('idle')">Idle</button>
+    <button class="phase-btn"        id="ph-ramp"    onclick="setPhase('ramp')">Ramp up</button>
+    <button class="phase-btn"        id="ph-sat"     onclick="setPhase('saturate')">Saturation</button>
+    <button class="phase-btn"        id="ph-scale"   onclick="setPhase('scaled')">Auto-scaled</button>
+    <button class="phase-btn"        id="ph-cool"    onclick="setPhase('cooldown')">Cool down</button>
+  </div>
+  <div class="ctrl-actions">
+    <button class="btn btn-run"   id="btn-start" onclick="startStream()">▶ Start live</button>
+    <button class="btn btn-pause" id="btn-stop"  onclick="stopStream()" disabled>⏹ Stop</button>
+  </div>
+</section>
+
+<main class="grid">
+
+  <!-- ── LEFT COLUMN ───────────────────────────────────────────── -->
+  <div class="col-left">
+
+    <!-- KPI row -->
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;">
+      <div class="panel" style="border-left:3px solid var(--green);padding:12px 14px;">
+        <div style="font-size:10px;letter-spacing:.08em;color:var(--text-dim);text-transform:uppercase;margin-bottom:5px;">Req / sec</div>
+        <div id="kpi-rps"  style="font-family:'Syne',sans-serif;font-size:26px;font-weight:700;color:var(--text-bright);">—</div>
+        <div id="kpi-rps-sub" style="font-size:10px;color:var(--text-dim);margin-top:3px;">current</div>
+      </div>
+      <div class="panel" style="border-left:3px solid var(--accent);padding:12px 14px;">
+        <div style="font-size:10px;letter-spacing:.08em;color:var(--text-dim);text-transform:uppercase;margin-bottom:5px;">p50 latency</div>
+        <div id="kpi-p50"  style="font-family:'Syne',sans-serif;font-size:26px;font-weight:700;color:var(--text-bright);">—</div>
+        <div id="kpi-p50-sub" style="font-size:10px;color:var(--text-dim);margin-top:3px;">ms</div>
+      </div>
+      <div class="panel" style="border-left:3px solid var(--amber);padding:12px 14px;">
+        <div style="font-size:10px;letter-spacing:.08em;color:var(--text-dim);text-transform:uppercase;margin-bottom:5px;">p99 latency</div>
+        <div id="kpi-p99"  style="font-family:'Syne',sans-serif;font-size:26px;font-weight:700;color:var(--text-bright);">—</div>
+        <div id="kpi-p99-sub" style="font-size:10px;color:var(--text-dim);margin-top:3px;">ms</div>
+      </div>
+      <div class="panel" style="border-left:3px solid var(--red);padding:12px 14px;">
+        <div style="font-size:10px;letter-spacing:.08em;color:var(--text-dim);text-transform:uppercase;margin-bottom:5px;">Error rate</div>
+        <div id="kpi-err"  style="font-family:'Syne',sans-serif;font-size:26px;font-weight:700;color:var(--text-bright);">—</div>
+        <div id="kpi-err-sub" style="font-size:10px;color:var(--text-dim);margin-top:3px;">%</div>
+      </div>
+    </div>
+
+    <!-- Throughput + instance count -->
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title">THROUGHPUT vs CONCURRENCY</span>
+        <span class="panel-sub" id="tp-sub">req/s with instance count overlay</span>
+      </div>
+      <div id="plot-tp" class="plot-area" style="height:220px;"></div>
+    </div>
+
+    <!-- Latency percentiles -->
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title">LATENCY PERCENTILES</span>
+        <span class="panel-sub">p50 · p95 · p99 — divergence = saturation</span>
+      </div>
+      <div id="plot-lat" class="plot-area" style="height:200px;"></div>
+    </div>
+
+    <!-- Error rate -->
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title">ERROR RATE</span>
+        <span class="panel-sub">% failed requests — threshold at 1%</span>
+      </div>
+      <div id="plot-err" class="plot-area" style="height:160px;"></div>
+    </div>
+
+  </div>
+
+  <!-- ── RIGHT COLUMN ──────────────────────────────────────────── -->
+  <div class="col-right">
+
+    <!-- Instance panel -->
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title">APP RUNNER INSTANCES</span>
+        <span class="version-badge" id="inst-badge">1 active</span>
+      </div>
+      <div style="padding:12px 14px;">
+        <div class="instance-grid" id="instance-grid">
+          <!-- populated by JS -->
+        </div>
+        <div style="font-size:11px;color:var(--text-dim);margin-top:10px;">
+          Auto-scaling: min 1 · max 3 · trigger at 100 concurrent req/instance
+        </div>
+      </div>
+    </div>
+
+    <!-- CPU + Memory -->
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title">RESOURCE UTILISATION</span>
+        <span class="panel-sub">CPU and memory per instance</span>
+      </div>
+      <div id="plot-res" class="plot-area plot-area--mini" style="height:130px;"></div>
+    </div>
+
+    <!-- Scale events log -->
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title">AUTO-SCALE EVENTS</span>
+        <span class="log-count" id="scale-count">0 events</span>
+      </div>
+      <div style="padding:10px 14px;" id="scale-log">
+        <div style="font-size:11px;color:var(--text-dim);">No scale events yet</div>
+      </div>
+    </div>
+
+    <!-- Live request log -->
+    <div class="panel panel--log">
+      <div class="panel-header">
+        <span class="panel-title">LIVE REQUEST LOG</span>
+        <span class="log-count" id="req-count">0 requests</span>
+      </div>
+      <div class="log-body" id="req-log" style="max-height:220px;">
+        <div class="log-entry log-entry--idle">Awaiting traffic...</div>
+      </div>
+    </div>
+
+  </div>
+
+</main>
+
+<script src="app.js"></script>
+<script>
+// ── Config ────────────────────────────────────────────────────────────────────
+const API         = 'https://msml605.onrender.com';
+const USE_MOCK    = true;  // set false when App Runner + CloudWatch is live
+
+// ── State ─────────────────────────────────────────────────────────────────────
+let streamInterval = null;
+let tick           = 0;
+let phase          = 'idle';
+let scaleEvents    = 0;
+let reqCount       = 0;
+
+const tsLabels = [];
+const rpsData  = [];
+const p50Data  = [];
+const p95Data  = [];
+const p99Data  = [];
+const errData  = [];
+const cpuData  = [];
+const memData  = [];
+const instData = [];
+
+// ── Phase definitions (mock data parameters) ──────────────────────────────────
+const PHASES = {
+  idle:     { rps:[2,4],    p50:[44,48],  p95:[55,65],   p99:[65,80],   err:[0,0],     cpu:[4,8],   mem:[18,22], inst:1 },
+  ramp:     { rps:[20,180], p50:[46,52],  p95:[60,90],   p99:[75,130],  err:[0,0.1],   cpu:[25,60], mem:[22,30], inst:1 },
+  saturate: { rps:[280,320],p50:[48,60],  p95:[100,180], p99:[200,380], err:[0.1,0.4], cpu:[72,88], mem:[30,38], inst:1 },
+  scaled:   { rps:[300,360],p50:[46,54],  p95:[70,110],  p99:[120,200], err:[0,0.1],   cpu:[38,55], mem:[24,30], inst:2 },
+  cooldown: { rps:[10,30],  p50:[44,48],  p95:[54,62],   p99:[64,78],   err:[0,0],     cpu:[8,16],  mem:[18,22], inst:1 },
+};
+
+function rand(lo, hi) { return lo + Math.random() * (hi - lo); }
+
+function mockTick() {
+  const p   = PHASES[phase];
+  const now = new Date().toLocaleTimeString('en-GB', { hour12: false });
+
+  const rps  = rand(...p.rps);
+  const p50  = rand(...p.p50);
+  const p95  = rand(...p.p95);
+  const p99  = rand(...p.p99);
+  const err  = rand(...p.err);
+  const cpu  = rand(...p.cpu);
+  const mem  = rand(...p.mem);
+  const inst = p.inst;
+
+  return { timestamp: now, rps, lat_p50_ms: p50, lat_p95_ms: p95,
+           lat_p99_ms: p99, error_rate_pct: err, cpu_pct: cpu,
+           memory_pct: mem, instance_count: inst };
+}
+
+// ── Plotly theme ──────────────────────────────────────────────────────────────
+function pt() {
+  const dark = document.documentElement.getAttribute('data-theme') === 'dark';
+  return { paper:'rgba(0,0,0,0)', plot:'rgba(0,0,0,0)',
+           grid: dark?'#1e2233':'#e5e7ef', text: dark?'#6b7394':'#8890aa' };
+}
+
+function baseLayout(xl, yl, extra) {
+  const t = pt();
+  return {
+    paper_bgcolor: t.paper, plot_bgcolor: t.plot,
+    font:   { family:"'DM Mono',monospace", color: t.text, size: 10 },
+    xaxis:  { gridcolor: t.grid, zeroline: false, color: t.text, ...(extra?.xaxis||{}) },
+    yaxis:  { gridcolor: t.grid, zeroline: false, color: t.text,
+              title: { text: yl, font: { size: 10 } }, ...(extra?.yaxis||{}) },
+    xaxis2: { overlaying:'x', side:'right', showgrid: false,
+              zeroline: false, color: t.text, ...(extra?.xaxis2||{}) },
+    yaxis2: { overlaying:'y', side:'right', showgrid: false,
+              zeroline: false, color: t.text, ...(extra?.yaxis2||{}) },
+    margin: { l:46, r:46, t:10, b:36 },
+    showlegend: true,
+    legend: { bgcolor:'rgba(0,0,0,0)', font:{ size:9 }, x:0, y:1 },
+  };
+}
+
+const CFG = { displayModeBar: false, responsive: true };
+
+// ── Init plots ────────────────────────────────────────────────────────────────
+function initPlots() {
+  Plotly.newPlot('plot-tp', [
+    { x:[], y:[], name:'req/s', type:'scatter', mode:'lines', fill:'tozeroy',
+      fillcolor:'rgba(127,119,221,0.12)', line:{ color:'#7F77DD', width:2 } },
+    { x:[], y:[], name:'instances', type:'scatter', mode:'lines',
+      line:{ color:'#3ecf8e', width:1.5, dash:'dot' }, yaxis:'y2' },
+  ], baseLayout('time','req/s',{
+    yaxis2:{ title:{ text:'instances', font:{ size:10 } },
+             dtick:1, range:[0,4] },
+  }), CFG);
+
+  Plotly.newPlot('plot-lat', [
+    { x:[], y:[], name:'p50', type:'scatter', mode:'lines',
+      line:{ color:'#1D9E75', width:2 } },
+    { x:[], y:[], name:'p95', type:'scatter', mode:'lines',
+      line:{ color:'#BA7517', width:1.8, dash:'dot' } },
+    { x:[], y:[], name:'p99', type:'scatter', mode:'lines',
+      line:{ color:'#E24B4A', width:1.8, dash:'dash' } },
+  ], baseLayout('time','ms'), CFG);
+
+  Plotly.newPlot('plot-err', [
+    { x:[], y:[], name:'error %', type:'bar',
+      marker:{ color:[] }, width:0.6 },
+  ], { ...baseLayout('time','error %'),
+    shapes:[{ type:'line', xref:'paper', x0:0, x1:1,
+              y0:1, y1:1, line:{ color:'#E24B4A', width:1, dash:'dot' } }],
+  }, CFG);
+
+  Plotly.newPlot('plot-res', [
+    { x:[], y:[], name:'CPU %',    type:'scatter', mode:'lines', fill:'tozeroy',
+      fillcolor:'rgba(127,119,221,0.1)', line:{ color:'#7F77DD', width:1.8 } },
+    { x:[], y:[], name:'Memory %', type:'scatter', mode:'lines',
+      line:{ color:'#BA7517', width:1.5, dash:'dot' } },
+  ], { ...baseLayout('time','%'),
+    yaxis:{ ...baseLayout().yaxis, range:[0,100] },
+    margin:{ l:40, r:10, t:6, b:28 },
+  }, CFG);
+
+  renderInstances(1);
+}
+
+// ── Update from data tick ─────────────────────────────────────────────────────
+function updateAll(d) {
+  const ts = d.timestamp;
+  const MAX = 60;
+
+  tsLabels.push(ts); rpsData.push(+d.rps.toFixed(1));
+  p50Data.push(+d.lat_p50_ms.toFixed(1));
+  p95Data.push(+(d.lat_p95_ms||d.lat_p50_ms*1.5).toFixed(1));
+  p99Data.push(+d.lat_p99_ms.toFixed(1));
+  errData.push(+d.error_rate_pct.toFixed(2));
+  cpuData.push(+d.cpu_pct.toFixed(1));
+  memData.push(+d.memory_pct.toFixed(1));
+  instData.push(d.instance_count);
+
+  // Trim to last MAX points
+  [tsLabels,rpsData,p50Data,p95Data,p99Data,
+   errData,cpuData,memData,instData].forEach(a => {
+    if (a.length > MAX) a.splice(0, a.length - MAX);
+  });
+
+  // Throughput + instances
+  Plotly.restyle('plot-tp', { x:[tsLabels,tsLabels], y:[rpsData,instData] }, [0,1]);
+
+  // Latency
+  Plotly.restyle('plot-lat', { x:[tsLabels,tsLabels,tsLabels],
+                               y:[p50Data,p95Data,p99Data] }, [0,1,2]);
+
+  // Error rate
+  const errColors = errData.map(v => v===0 ? 'rgba(29,158,117,0.6)'
+                                : v<1     ? 'rgba(186,117,23,0.7)'
+                                :            'rgba(224,74,74,0.75)');
+  Plotly.restyle('plot-err', { x:[tsLabels], y:[errData],
+                               'marker.color':[errColors] }, [0]);
+
+  // Resources
+  Plotly.restyle('plot-res', { x:[tsLabels,tsLabels],
+                               y:[cpuData,memData] }, [0,1]);
+
+  // KPI cards
+  const rps = d.rps.toFixed(1);
+  const p50 = d.lat_p50_ms.toFixed(0);
+  const p99 = d.lat_p99_ms.toFixed(0);
+  const err = d.error_rate_pct.toFixed(2);
+
+  document.getElementById('kpi-rps').textContent = rps;
+  document.getElementById('kpi-p50').textContent = p50;
+  document.getElementById('kpi-p99').textContent = p99;
+  document.getElementById('kpi-err').textContent = err;
+
+  document.getElementById('kpi-p99').style.color =
+    p99 > 300 ? 'var(--red)' : p99 > 150 ? 'var(--amber)' : 'var(--text-bright)';
+  document.getElementById('kpi-err').style.color =
+    err > 1 ? 'var(--red)' : err > 0 ? 'var(--amber)' : 'var(--green)';
+
+  // Header
+  document.getElementById('hdr-instances').textContent = d.instance_count;
+
+  // Pill
+  const pill = document.getElementById('pill-health');
+  if (d.error_rate_pct > 1) {
+    pill.className = 'pill drifting'; pill.textContent = 'DEGRADED';
+  } else {
+    pill.className = 'pill ok'; pill.textContent = 'HEALTHY';
+  }
+
+  // Instance cards
+  const prevInst = instData[instData.length - 2] || 1;
+  if (d.instance_count !== prevInst) {
+    const ev = d.instance_count > prevInst ? 'scale-out' : 'scale-in';
+    addScaleEvent(ev, d.instance_count, ts);
+  }
+  renderInstances(d.instance_count, d.cpu_pct, d.memory_pct);
+
+  // Request log
+  addReqLog(d);
+}
+
+function renderInstances(count, cpu, mem) {
+  const grid = document.getElementById('instance-grid');
+  grid.innerHTML = '';
+  for (let i = 0; i < count; i++) {
+    const c = document.createElement('div');
+    c.className = 'instance-card active';
+    const cpuVal = cpu ? (cpu / count + (Math.random()-0.5)*4).toFixed(1) : '—';
+    const memVal = mem ? (mem / count + (Math.random()-0.5)*2).toFixed(1) : '—';
+    c.innerHTML = `
+      <div class="inst-id">instance-${String(i+1).padStart(3,'0')}</div>
+      <div style="display:flex;gap:14px;margin-top:4px;">
+        <div>
+          <div class="inst-stat">${cpuVal}<span style="font-size:11px;font-weight:400;">%</span></div>
+          <div class="inst-label">CPU</div>
+        </div>
+        <div>
+          <div class="inst-stat">${memVal}<span style="font-size:11px;font-weight:400;">%</span></div>
+          <div class="inst-label">Memory</div>
+        </div>
+      </div>`;
+    grid.appendChild(c);
+  }
+  document.getElementById('inst-badge').textContent =
+    `${count} active`;
+}
+
+function addScaleEvent(type, count, ts) {
+  scaleEvents++;
+  document.getElementById('scale-count').textContent = `${scaleEvents} events`;
+  const log = document.getElementById('scale-log');
+  if (scaleEvents === 1) log.innerHTML = '';
+  const isOut = type === 'scale-out';
+  const ev = document.createElement('div');
+  ev.className = 'scale-event';
+  ev.innerHTML = `
+    <span class="scale-icon">${isOut ? '▲' : '▼'}</span>
+    <div class="scale-text">
+      <strong>${isOut ? 'Scale-out' : 'Scale-in'}</strong> — ${count} instance${count>1?'s':''} active
+      <div style="font-size:10px;color:var(--text-dim);margin-top:2px;">
+        ${isOut ? 'CPU exceeded threshold — new instance started'
+                : 'Load reduced — idle instance terminated'}
+      </div>
+    </div>
+    <span class="scale-ts">${ts}</span>`;
+  log.prepend(ev);
+}
+
+let reqTotal = 0;
+function addReqLog(d) {
+  reqTotal++;
+  document.getElementById('req-count').textContent = `${reqTotal.toLocaleString()} requests`;
+  const body = document.getElementById('req-log');
+  if (reqTotal === 1) body.innerHTML = '';
+
+  // Simulate 3 requests per tick
+  for (let i = 0; i < 3; i++) {
+    const paths  = ['/api/predict','/api/predict','/api/predict','/api/status'];
+    const path   = paths[Math.floor(Math.random()*paths.length)];
+    const lat    = +(d.lat_p50_ms + (Math.random()-0.5)*20).toFixed(0);
+    const ok     = Math.random() > d.error_rate_pct/100;
+    const status = ok ? 200 : (Math.random()>.5 ? 429 : 500);
+    const sClass = status===200 ? 's200' : status<500 ? 's4xx' : 's5xx';
+    const lClass = lat<80 ? 'lat-ok' : lat<200 ? 'lat-warn' : 'lat-bad';
+    const ts     = new Date().toLocaleTimeString('en-GB',{ hour12:false });
+
+    const row = document.createElement('div');
+    row.className = 'tl-row test-log';
+    row.innerHTML = `
+      <span class="log-ts">${ts}</span>
+      <span class="tl-method">POST</span>
+      <span class="tl-path">${path}</span>
+      <span class="tl-status ${sClass}">${status}</span>
+      <span class="tl-lat ${lClass}">${lat}ms</span>`;
+    body.prepend(row);
+
+    // Keep log trimmed
+    while (body.children.length > 80) body.removeChild(body.lastChild);
+  }
+}
+
+// ── Phase controls ────────────────────────────────────────────────────────────
+function setPhase(p) {
+  phase = p;
+  ['idle','ramp','saturate','scaled','cooldown'].forEach(id => {
+    document.getElementById(`ph-${id==='saturate'?'sat':id==='scaled'?'scale':id}`)
+      .classList.toggle('active', id === p);
+  });
+  if (p === 'scaled' && instData[instData.length-1] === 1) {
+    addScaleEvent('scale-out', 2, new Date().toLocaleTimeString('en-GB',{hour12:false}));
+  }
+  if (p === 'cooldown' && instData[instData.length-1] === 2) {
+    addScaleEvent('scale-in', 1, new Date().toLocaleTimeString('en-GB',{hour12:false}));
+  }
+}
+
+// ── Stream controls ───────────────────────────────────────────────────────────
+function startStream() {
+  document.getElementById('btn-start').disabled = true;
+  document.getElementById('btn-stop').disabled  = false;
+
+  if (USE_MOCK) {
+    streamInterval = setInterval(() => {
+      updateAll(mockTick());
+    }, 1500);
+  } else {
+    // Wire to real CloudWatch SSE
+    const es = new EventSource(`${API}/api/cloudwatch/stream`);
+    es.onmessage = e => {
+      const d = JSON.parse(e.data);
+      if (!d.error) updateAll(d);
+    };
+    window._es = es;
+  }
+}
+
+function stopStream() {
+  if (streamInterval) clearInterval(streamInterval);
+  if (window._es)     window._es.close();
+  document.getElementById('btn-start').disabled = false;
+  document.getElementById('btn-stop').disabled  = true;
+}
+
+// ── Theme toggle ──────────────────────────────────────────────────────────────
+document.getElementById('theme-toggle').addEventListener('click', () => {
+  const html   = document.documentElement;
+  const isDark = html.getAttribute('data-theme') === 'dark';
+  html.setAttribute('data-theme', isDark ? 'light' : 'dark');
+  document.getElementById('theme-icon').textContent = isDark ? '☽' : '☀';
+  ['plot-tp','plot-lat','plot-err','plot-res'].forEach(id => {
+    const t = pt();
+    try { Plotly.relayout(id, {
+      paper_bgcolor: t.paper, plot_bgcolor: t.plot, 'font.color': t.text,
+      'xaxis.gridcolor': t.grid, 'yaxis.gridcolor': t.grid,
+    }); } catch(_) {}
+  });
+});
+
+// ── Boot ──────────────────────────────────────────────────────────────────────
+initPlots();
+renderInstances(1);
+</script>
+</body>
+</html>
