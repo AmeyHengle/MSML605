@@ -7,35 +7,153 @@ on:
 
 jobs:
 
-  # ── Job 1: Deploy frontend to GitHub Pages ──────────────────────
+  # ── Job 1: Unit tests (gate — must pass before anything deploys) ────────────
+  unit-tests:
+    name: Unit tests — pipeline.py
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: amey-demo
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt pytest pytest-cov
+
+      - name: Run unit tests
+        run: |
+          pytest tests/test_pipeline.py -v \
+            --tb=short \
+            --cov=pipeline \
+            --cov-report=term-missing \
+            --cov-fail-under=70
+        env:
+          PYTHONPATH: .
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: .coverage
+
+  # ── Job 2: Deploy frontend (runs only if unit tests pass) ──────────────────
   deploy-frontend:
     name: Deploy frontend → GitHub Pages
     runs-on: ubuntu-latest
+    needs: unit-tests
     permissions:
       contents: write
 
     steps:
-      - name: Checkout branch
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           ref: amey-demo
 
-      - name: Deploy frontend/ to gh-pages branch
-        uses: peaceiris/actions-gh-pages@v4
+      - uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./frontend
           publish_branch: gh-pages
           force_orphan: true
 
-  # ── Job 2: Trigger Render backend redeploy ──────────────────────
+  # ── Job 3: Deploy backend (runs only if unit tests pass) ───────────────────
   deploy-backend:
     name: Trigger Render redeploy
     runs-on: ubuntu-latest
+    needs: unit-tests
 
     steps:
       - name: Ping Render deploy webhook
         run: |
-          curl -s -o /dev/null -w "%{http_code}" \
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
             --request POST \
-            "${{ secrets.RENDER_DEPLOY_HOOK_URL }}"
+            "${{ secrets.RENDER_DEPLOY_HOOK_URL }}")
+          echo "Render webhook response: $STATUS"
+          if [ "$STATUS" != "200" ] && [ "$STATUS" != "201" ]; then
+            echo "Render webhook failed with status $STATUS"
+            exit 1
+          fi
+
+  # ── Job 4: Post-deploy smoke tests (runs after backend deploys) ─────────────
+  smoke-tests:
+    name: Post-deploy smoke tests — API
+    runs-on: ubuntu-latest
+    needs: deploy-backend
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: amey-demo
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install test dependencies
+        run: pip install requests pytest pytest-timeout
+
+      - name: Wait for Render to finish deploying
+        run: |
+          echo "Waiting 90s for Render container to restart..."
+          sleep 90
+
+      - name: Wait for /api/status to respond
+        run: |
+          MAX=12
+          COUNT=0
+          until curl -sf "${{ secrets.RENDER_URL }}/api/status" > /dev/null; do
+            COUNT=$((COUNT+1))
+            if [ $COUNT -ge $MAX ]; then
+              echo "Service did not come up after $((MAX * 10))s"
+              exit 1
+            fi
+            echo "Attempt $COUNT/$MAX — retrying in 10s..."
+            sleep 10
+          done
+          echo "Service is up"
+
+      - name: Run smoke tests (excluding SSE streaming tests)
+        run: |
+          pytest tests/test_api.py -v \
+            --tb=short \
+            -k "not TestSimulate" \
+            --timeout=60
+        env:
+          BASE_URL: ${{ secrets.RENDER_URL }}
+          PYTHONPATH: .
+
+  # ── Job 5: DORA metrics (always runs — records failures too) ───────────────
+  record-dora:
+    name: Record DORA metrics
+    runs-on: ubuntu-latest
+    needs: smoke-tests
+    if: always()
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: amey-demo
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install requests python-dateutil
+
+      - name: Compute and log DORA metrics
+        run: python scripts/dora_metrics.py
+        env:
+          GITHUB_TOKEN:  ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPO:   AmeyHengle/MSML605
+          WORKFLOW_NAME: Deploy
+          DEPLOY_JOB:    deploy-backend
+          SMOKE_JOB:     smoke-tests
+          DAYS_WINDOW:   30
