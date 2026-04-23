@@ -1,7 +1,9 @@
-// app.js — CarbonWatch MLOps
+// app.js — CarbonWatch MLOps pipeline page (index.html only)
+// monitoring.html has its own self-contained script and does NOT load this file.
+
 const API = 'https://msml605.onrender.com';
 
-// ── Global state ──────────────────────────────────────────────────────────────
+// ── State ─────────────────────────────────────────────────────────────────────
 let evtSource   = null;
 let initialized = false;
 let simRunning  = false;
@@ -12,7 +14,6 @@ let kdeFeature = 'gas';
 let ksHistory  = [];
 let ksMonths   = [];
 
-// Fixed axis ranges — set once from /api/initialize, never changed again
 let PC1_RANGE       = null;
 let INTENSITY_RANGE = null;
 let KS_THRESHOLD    = 0.10;
@@ -62,8 +63,8 @@ function reapplyPlotlyTheme() {
   });
 }
 
-// ── Plotly layout helper ──────────────────────────────────────────────────────
-function makeLayout(xLabel, yLabel, xrange, yrange, extra) {
+// ── Plotly layout factory ─────────────────────────────────────────────────────
+function makeLayout(xLabel, yLabel, xrange, yrange) {
   const t = plotlyTheme();
   return {
     paper_bgcolor: t.paper,
@@ -78,7 +79,6 @@ function makeLayout(xLabel, yLabel, xrange, yrange, extra) {
     margin: { l: 52, r: 16, t: 12, b: 44 },
     showlegend: true,
     legend: { bgcolor: 'rgba(0,0,0,0)', font: { size: 9 }, x: 0, y: 1 },
-    ...(extra || {}),
   };
 }
 
@@ -131,7 +131,7 @@ function updatePredPoints(pred_x, actual_y) {
   Plotly.extendTraces('plot-pred', { x: [pred_x], y: [actual_y] }, [0]);
 }
 
-// ── KDE ───────────────────────────────────────────────────────────────────────
+// ── KDE plot ──────────────────────────────────────────────────────────────────
 function initKdePlot() {
   Plotly.newPlot('plot-kde', [
     {
@@ -192,7 +192,7 @@ function updateKsSpark(month, ksVal) {
   }, [1]);
 }
 
-// ── Pills ─────────────────────────────────────────────────────────────────────
+// ── Drift pills ───────────────────────────────────────────────────────────────
 function updatePills(pills) {
   document.querySelectorAll('.feat-pill').forEach(el => {
     el.className = `feat-pill ${pills[el.dataset.feat] || 'none'}`;
@@ -221,10 +221,10 @@ function updateHeader(month, idx, total, status) {
 
 function updateDash(d) {
   const set = (id, v) => { document.getElementById(id).textContent = v ?? '—'; };
-  set('m-r2',   d.r2   != null ? d.r2.toFixed(4)   : null);
-  set('m-rmse', d.rmse != null ? d.rmse.toFixed(2)  : null);
+  set('m-r2',   d.r2    != null ? d.r2.toFixed(4)    : null);
+  set('m-rmse', d.rmse  != null ? d.rmse.toFixed(2)  : null);
   set('m-ks',   d.ks_stat != null ? d.ks_stat.toFixed(4) : null);
-  set('m-psi',  d.psi  != null ? d.psi.toFixed(4)   : null);
+  set('m-psi',  d.psi   != null ? d.psi.toFixed(4)   : null);
   set('m-version', d.model_version ? `v${d.model_version}` : null);
   if (d.retrained || d.month_idx === 0) {
     set('m-retrain', d.month);
@@ -232,7 +232,7 @@ function updateDash(d) {
   }
 }
 
-// ── Flash ─────────────────────────────────────────────────────────────────────
+// ── Drift flash ───────────────────────────────────────────────────────────────
 function flashDrift(id) {
   const el = document.getElementById(id);
   if (!el) return;
@@ -257,38 +257,37 @@ btnInit.addEventListener('click', async () => {
     speed:        parseFloat(document.getElementById('cfg-speed').value),
   };
 
+  // AbortController for broad browser compatibility
+  const controller = new AbortController();
+  const tid = setTimeout(() => controller.abort(), 120000);
+
   try {
-    const res  = await fetch(`${API}/api/initialize`, {
-      method: 'POST',
+    const res = await fetch(`${API}/api/initialize`, {
+      method:  'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(config),
+      body:    JSON.stringify(config),
+      signal:  controller.signal,
     });
+    clearTimeout(tid);
 
-    if (!res.ok) {
-      throw new Error(`Server returned ${res.status}: ${await res.text()}`);
-    }
-
+    if (!res.ok) throw new Error(`Server returned ${res.status}`);
     const json = await res.json();
     const d    = json.data;
 
-    // Validate that the backend returned the expected fields
     if (!d || !d.pc1_range || !d.intensity_range) {
       throw new Error(
-        `Backend missing required fields. Got keys: ${Object.keys(d || {}).join(', ')}`
+        `Backend missing required fields. Got: ${Object.keys(d || {}).join(', ')}`
       );
     }
 
-    // Lock in global axis ranges
     PC1_RANGE       = d.pc1_range;
     INTENSITY_RANGE = d.intensity_range;
 
-    // Boot all four plots
     initPcaPlot(d.pca_x, d.pca_y, d.line_pc1, d.line_y);
     initPredPlot(d.pred_x, d.actual_y);
     initKdePlot();
     initKsPlot();
 
-    // Seed KDE store
     kdeStore[config.feature_x] = {
       ref_x: d.kde_x, ref_y: d.kde_ref_y,
       cur_x: d.kde_x, cur_y: d.kde_ref_y,
@@ -303,7 +302,6 @@ btnInit.addEventListener('click', async () => {
       'retrain'
     );
 
-    // Lock controls during simulation
     document.querySelectorAll('.ctrl-group select, .ctrl-group input')
             .forEach(el => { el.disabled = true; });
 
@@ -312,7 +310,9 @@ btnInit.addEventListener('click', async () => {
     btnReset.disabled = false;
 
   } catch (err) {
-    addLog(`Init failed: ${err.message}`, 'drift');
+    clearTimeout(tid);
+    const msg = err.name === 'AbortError' ? 'Request timed out after 120s' : err.message;
+    addLog(`Init failed: ${msg}`, 'drift');
     btnInit.disabled = false;
   }
 });
@@ -329,7 +329,6 @@ btnSim.addEventListener('click', () => {
 
   evtSource.onmessage = (e) => {
     const d = JSON.parse(e.data);
-
     if (d.error)  { addLog(d.error, 'drift'); evtSource.close(); return; }
     if (d.paused) return;
     if (d.done && !d.month) {
@@ -338,19 +337,15 @@ btnSim.addEventListener('click', () => {
       evtSource.close(); btnPause.disabled = true; return;
     }
 
-    // Header
     updateHeader(d.month, d.month_idx + 1, d.total_months, 'RUNNING');
 
-    // Scatter: add new points every tick
     updatePcaPoints(d.pca_x, d.pca_y);
     updatePredPoints(d.pred_x, d.actual_y);
 
-    // Regression line: only update on retrain
     if (d.retrained && d.new_line) {
       updatePcaLine(d.new_line.line_pc1, d.new_line.line_y);
     }
 
-    // KDE
     const feat = document.getElementById('cfg-feature-x').value;
     kdeStore[feat] = {
       ref_x: d.kde_ref_x, ref_y: d.kde_ref_y,
@@ -358,14 +353,10 @@ btnSim.addEventListener('click', () => {
     };
     if (kdeFeature === feat) updateKdePlot(kdeFeature);
 
-    // KS sparkline
     updateKsSpark(d.month, d.ks_stat);
-
-    // Pills + dashboard
     if (d.drift_pills) updatePills(d.drift_pills);
     updateDash(d);
 
-    // Drift indicators
     if (d.drift_detected) {
       flashDrift('panel-pca');
       flashDrift('panel-kde');
@@ -377,7 +368,6 @@ btnSim.addEventListener('click', () => {
       document.getElementById('pill-drift').textContent = `KS: ${d.ks_stat}`;
     }
 
-    // Log
     const logType = d.retrained ? 'retrain' : d.drift_detected ? 'drift' : 'ok';
     addLog(`[${d.month}]  ${d.log}`, logType);
 
