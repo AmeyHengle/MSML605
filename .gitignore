@@ -6,3 +6,4 @@ __pycache__/
 .env
 dora_metrics.json
 .coverage
+.pytest_cache/
