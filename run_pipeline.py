@@ -60,10 +60,15 @@ def main() -> None:
     with mlflow.start_run(run_name=f"{cfg.run_name_prefix}_{cfg.window_label}"):
         mlflow.set_tag("pipeline", "daily")
         mlflow.log_param("window_hours", cfg.window_hours)
+        mlflow.log_param("data_resolution_minutes", cfg.data_resolution_minutes)
         mlflow.log_param("window_start_utc", start_dt.isoformat())
         mlflow.log_param("window_end_utc", end_dt.isoformat())
 
-        result = fetch_window_dataframe(start_dt, end_dt)
+        result = fetch_window_dataframe(
+            start_dt,
+            end_dt,
+            resolution_minutes=cfg.data_resolution_minutes,
+        )
         df = result.df
 
         if df.empty:

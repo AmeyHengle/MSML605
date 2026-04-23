@@ -90,6 +90,7 @@ def fetch_intensity(
     hours_back: int = 12,
     start_dt: str | None = None,
     end_dt: str | None = None,
+    resolution_minutes: int = 5,
 ) -> dict:
     """Fetch carbon intensity readings with emission factors for a time window.
 
@@ -101,9 +102,10 @@ def fetch_intensity(
                     start_dt and end_dt are both provided.
         start_dt: ISO8601 start datetime (e.g. '2026-03-01T00:00Z').
         end_dt:   ISO8601 end datetime (e.g. '2026-03-01T12:00Z').
+        resolution_minutes: Output cadence in minutes (default 5).
     """
     start, end = _resolve_window(hours_back, start_dt, end_dt)
-    result = fetch_window_dataframe(start, end)
+    result = fetch_window_dataframe(start, end, resolution_minutes=resolution_minutes)
     return {
         "readings": _df_to_records(result.df),
         "start": start.isoformat(),
@@ -118,6 +120,7 @@ def fetch_generation_mix(
     hours_back: int = 12,
     start_dt: str | None = None,
     end_dt: str | None = None,
+    resolution_minutes: int = 5,
 ) -> dict:
     """Fetch generation mix (fuel-type percentages) for a time window.
 
@@ -128,9 +131,10 @@ def fetch_generation_mix(
                     start_dt and end_dt are both provided.
         start_dt: ISO8601 start datetime (e.g. '2026-03-01T00:00Z').
         end_dt:   ISO8601 end datetime (e.g. '2026-03-01T12:00Z').
+        resolution_minutes: Output cadence in minutes (default 5).
     """
     start, end = _resolve_window(hours_back, start_dt, end_dt)
-    result = fetch_window_dataframe(start, end)
+    result = fetch_window_dataframe(start, end, resolution_minutes=resolution_minutes)
 
     intensity_cols = {
         "timestamp",

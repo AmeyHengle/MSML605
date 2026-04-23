@@ -176,36 +176,13 @@ def test_worker(state: PipelineState) -> dict:
         return {"status": "error", "error": str(exc)}
 
 
-def _get_production_rmse() -> float:
-    """Fetch RMSE of current Production model from MLflow. Raises RuntimeError if not found."""
-    from mlflow.tracking import MlflowClient
-    from ml605_pipeline.registry import MODEL_NAME
-
-    client = MlflowClient()
-    versions = client.get_latest_versions(MODEL_NAME, stages=["Production"])
-    if not versions:
-        raise RuntimeError(
-            "No Production model in MLflow — cannot compute RMSE degradation. "
-            "Run train_with_mlflow.py and promote a model to Production first."
-        )
-    run_id = versions[0].run_id
-    run = client.get_run(run_id)
-    rmse = run.data.metrics.get("rmse")
-    if rmse is None:
-        raise RuntimeError(
-            f"Production model run {run_id} has no 'rmse' metric logged. "
-            "Cannot compute RMSE degradation signal."
-        )
-    return float(rmse)
-
-
 def drift_worker(state: PipelineState) -> dict:
     """Detect distribution drift between historical reference and current window.
 
     Returns:
         {"drift_report": DriftReport, "overall_drift": bool,
-         "rmse_degradation_pct": float, "rmse_degradation_fired": bool,
-         "production_rmse": float}
+         "rmse_degradation_pct": None, "rmse_degradation_fired": False,
+         "production_rmse": None}
         or {"status": "error", "error": str} on failure.
     """
     try:
@@ -230,23 +207,17 @@ def drift_worker(state: PipelineState) -> dict:
 
         drift_report = detect_drift(reference_df, state["df_featured"], feature_cols)
 
-        # RMSE degradation signal (third drift signal alongside PSI and KS)
-        try:
-            production_rmse = _get_production_rmse()
-        except RuntimeError as exc:
-            return {"status": "error", "error": str(exc)}
-
-        current_rmse = state["eval_result"].rmse
-        rmse_degradation_pct = (current_rmse - production_rmse) / production_rmse * 100.0
-        rmse_degradation_fired = current_rmse > production_rmse * 1.20
-
-        # overall_drift fires when ANY signal fires
-        overall_drift = drift_report.overall_drift or rmse_degradation_fired
+        # Retrain gate is now pure data drift (PSI/KS verdict from detect_drift).
+        overall_drift = drift_report.overall_drift
+        rmse_degradation_pct = None
+        rmse_degradation_fired = False
+        production_rmse = None
 
         mlflow_run_id = state.get("mlflow_run_id")
         if mlflow_run_id:
             with mlflow.start_run(run_name="drift_worker", nested=True):
-                mlflow.log_metric("rmse_degradation_pct", rmse_degradation_pct)
+                if rmse_degradation_pct is not None:
+                    mlflow.log_metric("rmse_degradation_pct", rmse_degradation_pct)
                 mlflow.log_metric("rmse_degradation_fired", int(rmse_degradation_fired))
                 mlflow.log_metric("overall_drift", int(overall_drift))
                 mlflow.log_text(

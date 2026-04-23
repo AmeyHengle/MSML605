@@ -174,7 +174,6 @@ def test_drift_worker() -> None:
     with (
         patch("ml605_agent.workers.pd.read_csv", return_value=df),
         patch("ml605_agent.workers.detect_drift", return_value=fake_report),
-        patch("ml605_agent.workers._get_production_rmse", return_value=12.0),
     ):
         state = {
             "df_featured": df,
@@ -293,91 +292,30 @@ def test_fetch_worker_integration() -> None:
         assert result.get("rows_fetched", 0) > 0, "Expected at least 1 row fetched"
 
 
-# ANALYSIS-03: RMSE degradation signal
-
-
-def test_drift_worker_rmse_degradation() -> None:
-    """drift_worker sets rmse_degradation_fired=True when current RMSE exceeds production RMSE by > 20%."""
-    from ml605_agent.workers import drift_worker
-
-    feature_cols = ["hour", "day_of_week"]
-    df = _featured_df(feature_cols)
-    fake_report = DriftReport(feature_results=[], overall_drift=False, drifted_features=[])
-
-    with (
-        patch("ml605_agent.workers.pd.read_csv", return_value=df),
-        patch("ml605_agent.workers.detect_drift", return_value=fake_report),
-        patch("ml605_agent.workers._get_production_rmse", return_value=10.0),
-    ):
-        state = {
-            "df_featured": df,
-            "feature_cols": feature_cols,
-            "factors": {},
-            "eval_result": EvalResult(rmse=13.0, mae=9.0, r2=0.8, mape=6.0),  # 30% above 10.0
-            "mlflow_run_id": None,
-            "status": "running",
-        }
-        result = drift_worker(state)
-
-    assert result.get("rmse_degradation_fired") is True
-    assert result.get("overall_drift") is True  # even though PSI/KS are clean
-
-
-def test_drift_worker_no_production_rmse() -> None:
-    """drift_worker returns status='error' when no Production model RMSE is available in MLflow."""
-    from ml605_agent.workers import drift_worker
-
-    feature_cols = ["hour", "day_of_week"]
-    df = _featured_df(feature_cols)
-    fake_report = DriftReport(feature_results=[], overall_drift=False, drifted_features=[])
-
-    with (
-        patch("ml605_agent.workers.pd.read_csv", return_value=df),
-        patch("ml605_agent.workers.detect_drift", return_value=fake_report),
-        patch(
-            "ml605_agent.workers._get_production_rmse",
-            side_effect=RuntimeError("No Production model in MLflow"),
-        ),
-    ):
-        state = {
-            "df_featured": df,
-            "feature_cols": feature_cols,
-            "factors": {},
-            "eval_result": EvalResult(rmse=10.0, mae=8.0, r2=0.9, mape=5.0),
-            "mlflow_run_id": None,
-            "status": "running",
-        }
-        result = drift_worker(state)
-
-    assert result.get("status") == "error"
-    assert "Production" in result.get("error", "")
-
-
-def test_drift_worker_three_signals() -> None:
-    """All three signals evaluated independently; overall_drift=True if any fires."""
+def test_drift_worker_ignores_rmse_degradation_signal() -> None:
+    """overall_drift follows detect_drift only; RMSE degradation does not trigger retrain."""
     from ml605_agent.workers import drift_worker
 
     feature_cols = ["hour"]
     df = _featured_df(feature_cols)
-    # PSI/KS are clean (detect_drift returns False), but RMSE is 25% degraded
+    # PSI/KS are clean (detect_drift returns False), and overall_drift must remain False.
     fake_report = DriftReport(feature_results=[], overall_drift=False, drifted_features=[])
 
     with (
         patch("ml605_agent.workers.pd.read_csv", return_value=df),
         patch("ml605_agent.workers.detect_drift", return_value=fake_report),
-        patch("ml605_agent.workers._get_production_rmse", return_value=10.0),
     ):
         state = {
             "df_featured": df,
             "feature_cols": feature_cols,
             "factors": {},
-            "eval_result": EvalResult(rmse=12.5, mae=9.0, r2=0.85, mape=5.5),  # 25% above 10.0
+            "eval_result": EvalResult(rmse=12.5, mae=9.0, r2=0.85, mape=5.5),
             "mlflow_run_id": None,
             "status": "running",
         }
         result = drift_worker(state)
 
-    assert result.get("rmse_degradation_fired") is True, "RMSE signal must fire at 25% degradation"
-    assert result.get("overall_drift") is True, "overall_drift must be True when any signal fires"
-    # PSI/KS were not fired (detect_drift returned False for feature results)
-    assert result["drift_report"].overall_drift is False, "detect_drift's own verdict was False"
+    assert result.get("rmse_degradation_fired") is False
+    assert result.get("rmse_degradation_pct") is None
+    assert result.get("production_rmse") is None
+    assert result.get("overall_drift") is False

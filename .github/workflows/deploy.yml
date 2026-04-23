@@ -1,0 +1,321 @@
+name: Deploy
+
+on:
+  push:
+    branches:
+      - amey-demo
+
+env:
+  AWS_REGION:     us-east-1
+  ECR_REPOSITORY: msml605-backend
+
+# ── Shared Slack helper ────────────────────────────────────────────────────────
+# Referenced by both the failure-notify and rollback-notify jobs.
+# SLACK_WEBHOOK_URL must be set in GitHub Secrets.
+
+jobs:
+
+  # ── Job 1: Unit tests (gate) ─────────────────────────────────────────────────
+  unit-tests:
+    name: Unit tests — pipeline.py
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: amey-demo
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt pytest pytest-cov
+
+      - name: Run unit tests
+        run: |
+          pytest tests/test_pipeline.py -v \
+            --tb=short \
+            --cov=pipeline \
+            --cov-report=term-missing \
+            --cov-fail-under=70
+        env:
+          PYTHONPATH: .
+
+  # ── Job 2: Build and push Docker image to ECR ─────────────────────────────────
+  build-and-push:
+    name: Build Docker image and push to ECR
+    runs-on: ubuntu-latest
+    needs: unit-tests
+    outputs:
+      image-uri: ${{ steps.build.outputs.image-uri }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: amey-demo
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build tag and push image
+        id: build
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG:    ${{ github.sha }}
+        run: |
+          IMAGE_URI="$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
+          docker build -t "$IMAGE_URI" .
+          docker push "$IMAGE_URI"
+          docker tag  "$IMAGE_URI" "$ECR_REGISTRY/$ECR_REPOSITORY:latest"
+          docker push "$ECR_REGISTRY/$ECR_REPOSITORY:latest"
+          echo "image-uri=$IMAGE_URI" >> $GITHUB_OUTPUT
+
+  # ── Job 3: Deploy frontend to GitHub Pages ─────────────────────────────────────
+  deploy-frontend:
+    name: Deploy frontend to GitHub Pages
+    runs-on: ubuntu-latest
+    needs: unit-tests
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: amey-demo
+
+      - uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token:   ${{ secrets.GITHUB_TOKEN }}
+          publish_dir:    ./frontend
+          publish_branch: gh-pages
+          force_orphan:   true
+
+  # ── Job 4: Deploy to Render ───────────────────────────────────────────────────
+  deploy-backend:
+    name: Deploy to Render
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    steps:
+      - name: Ping Render deploy webhook
+        run: |
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            --request POST \
+            "${{ secrets.RENDER_DEPLOY_HOOK_URL }}")
+          echo "Render webhook response: $STATUS"
+          if [ "$STATUS" != "200" ] && [ "$STATUS" != "201" ]; then
+            echo "Render webhook failed with status $STATUS"
+            exit 1
+          fi
+
+  # ── Job 5: Post-deploy smoke tests ────────────────────────────────────────────
+  smoke-tests:
+    name: Post-deploy smoke tests
+    runs-on: ubuntu-latest
+    needs: deploy-backend
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: amey-demo
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install test dependencies
+        run: pip install requests pytest pytest-timeout
+
+      - name: Poll until service is live
+        run: |
+          MAX=18
+          COUNT=0
+          until curl -sf "${{ secrets.RENDER_URL }}/api/status" > /dev/null; do
+            COUNT=$((COUNT+1))
+            if [ $COUNT -ge $MAX ]; then
+              echo "Service did not come up after $((MAX*10))s"
+              exit 1
+            fi
+            echo "Attempt $COUNT/$MAX — retrying in 10s..."
+            sleep 10
+          done
+          echo "Service is live"
+
+      - name: Run smoke tests
+        run: |
+          pytest tests/test_api.py -v \
+            --tb=short \
+            -k "not TestSimulate" \
+            --timeout=60
+        env:
+          BASE_URL:    ${{ secrets.RENDER_URL }}
+          PYTHONPATH: .
+
+  # ── Job 6: Slack alert on failure ─────────────────────────────────────────────
+  # Runs when ANY of the above jobs fail.
+  # Skipped if commit message starts with "Revert" (prevents alert loop).
+  notify-failure:
+    name: Slack alert — deploy failed
+    runs-on: ubuntu-latest
+    needs: [unit-tests, build-and-push, deploy-frontend, deploy-backend, smoke-tests]
+    if: |
+      failure() &&
+      !startsWith(github.event.head_commit.message, 'Revert')
+    steps:
+      - name: Send Slack failure alert
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          COMMIT_SHA:        ${{ github.sha }}
+          COMMIT_MSG:        ${{ github.event.head_commit.message }}
+          COMMIT_AUTHOR:     ${{ github.event.head_commit.author.name }}
+          RUN_URL:           ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          BRANCH:            ${{ github.ref_name }}
+        run: |
+          SHORT_SHA="${COMMIT_SHA:0:7}"
+          # Escape double quotes in commit message for JSON safety
+          SAFE_MSG=$(echo "$COMMIT_MSG" | sed 's/"/\\"/g' | head -c 120)
+
+          curl -s -X POST "$SLACK_WEBHOOK_URL" \
+            -H 'Content-Type: application/json' \
+            -d "{
+              \"attachments\": [{
+                \"color\": \"#E24B4A\",
+                \"blocks\": [
+                  {
+                    \"type\": \"header\",
+                    \"text\": {
+                      \"type\": \"plain_text\",
+                      \"text\": \":rotating_light:  Deploy failed — $BRANCH\",
+                      \"emoji\": true
+                    }
+                  },
+                  {
+                    \"type\": \"section\",
+                    \"fields\": [
+                      {\"type\": \"mrkdwn\", \"text\": \"*Commit*\n\`$SHORT_SHA\` — $SAFE_MSG\"},
+                      {\"type\": \"mrkdwn\", \"text\": \"*Author*\n$COMMIT_AUTHOR\"},
+                      {\"type\": \"mrkdwn\", \"text\": \"*Branch*\n$BRANCH\"},
+                      {\"type\": \"mrkdwn\", \"text\": \"*Status*\nAutomatic rollback in progress...\"}
+                    ]
+                  },
+                  {
+                    \"type\": \"actions\",
+                    \"elements\": [{
+                      \"type\": \"button\",
+                      \"text\": {\"type\": \"plain_text\", \"text\": \"View failed run\"},
+                      \"url\": \"$RUN_URL\",
+                      \"style\": \"danger\"
+                    }]
+                  }
+                ]
+              }]
+            }"
+
+  # ── Job 7: Automatic git revert rollback ───────────────────────────────────────
+  # Triggers only when smoke-tests (or deploy-backend) fail.
+  # Skipped if this is already a revert commit (prevents infinite loop).
+  rollback:
+    name: Auto rollback — git revert
+    runs-on: ubuntu-latest
+    needs: [smoke-tests]
+    if: |
+      failure() &&
+      !startsWith(github.event.head_commit.message, 'Revert')
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref:         amey-demo
+          fetch-depth: 2        # need at least 2 commits to revert
+          token:       ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure git identity
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Revert last commit and push
+        run: |
+          FAILED_SHA="${{ github.sha }}"
+          SHORT_SHA="${FAILED_SHA:0:7}"
+          echo "Reverting commit $SHORT_SHA..."
+          git revert HEAD --no-edit
+          git push origin amey-demo
+          echo "Revert pushed — new deploy will trigger automatically"
+
+      - name: Send Slack rollback confirmation
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          FAILED_SHA:        ${{ github.sha }}
+          RUN_URL:           ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          BRANCH:            ${{ github.ref_name }}
+        run: |
+          SHORT_SHA="${FAILED_SHA:0:7}"
+          curl -s -X POST "$SLACK_WEBHOOK_URL" \
+            -H 'Content-Type: application/json' \
+            -d "{
+              \"attachments\": [{
+                \"color\": \"#f5a623\",
+                \"blocks\": [
+                  {
+                    \"type\": \"header\",
+                    \"text\": {
+                      \"type\": \"plain_text\",
+                      \"text\": \":rewind:  Rollback initiated — $BRANCH\",
+                      \"emoji\": true
+                    }
+                  },
+                  {
+                    \"type\": \"section\",
+                    \"fields\": [
+                      {\"type\": \"mrkdwn\", \"text\": \"*Reverted commit*\n\`$SHORT_SHA\`\"},
+                      {\"type\": \"mrkdwn\", \"text\": \"*Action*\nPrevious working commit redeploying now\"}
+                    ]
+                  },
+                  {
+                    \"type\": \"actions\",
+                    \"elements\": [{
+                      \"type\": \"button\",
+                      \"text\": {\"type\": \"plain_text\", \"text\": \"View run\"},
+                      \"url\": \"$RUN_URL\"
+                    }]
+                  }
+                ]
+              }]
+            }"
+
+  # ── Job 8: DORA metrics (always runs) ─────────────────────────────────────────
+  record-dora:
+    name: Record DORA metrics
+    runs-on: ubuntu-latest
+    needs: smoke-tests
+    if: always()
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: amey-demo
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install requests python-dateutil
+
+      - name: Compute DORA metrics
+        run: python scripts/dora_metrics.py
+        env:
+          GITHUB_TOKEN:  ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPO:   AmeyHengle/MSML605
+          WORKFLOW_NAME: Deploy
+          DEPLOY_JOB:    deploy-backend
+          SMOKE_JOB:     smoke-tests
+          DAYS_WINDOW:   30

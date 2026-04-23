@@ -11,6 +11,7 @@ class PipelineConfig:
     # Runtime window
     window_hours: int = 12
     interval_seconds: int = 30
+    data_resolution_minutes: int = 5
 
     # IO
     data_dir: Path = Path("data")
@@ -43,9 +44,11 @@ def load_config_from_env() -> PipelineConfig:
     # Keep it simple: only a few env overrides.
     window_hours = int(getenv("PIPELINE_WINDOW_HOURS", "12"))
     interval_seconds = int(getenv("PIPELINE_INTERVAL_SECONDS", "30"))
+    data_resolution_minutes = int(getenv("PIPELINE_DATA_RESOLUTION_MINUTES", "5"))
     mlflow_experiment = getenv("MLFLOW_EXPERIMENT", "daily-intensity-pipeline")
     return PipelineConfig(
         window_hours=window_hours,
         interval_seconds=interval_seconds,
+        data_resolution_minutes=data_resolution_minutes,
         mlflow_experiment=mlflow_experiment,
     )

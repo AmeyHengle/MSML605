@@ -68,9 +68,11 @@ def fetch_window_dataframe(
     end_dt: datetime,
     *,
     session: requests.Session | None = None,
+    resolution_minutes: int = 5,
 ) -> WindowFetchResult:
     """
     Fetch intensity + generationmix for [start_dt, end_dt] and merge on interval start time ("from").
+    Optionally upsample to finer cadence using time interpolation.
 
     Note: Carbon Intensity API resolution is not 30s. Your pipeline interval_seconds is an execution cadence,
     not necessarily the API sampling period.
@@ -118,7 +120,42 @@ def fetch_window_dataframe(
         df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True, errors="coerce")
         df["interval_end"] = pd.to_datetime(df["interval_end"], utc=True, errors="coerce")
         df = df.dropna(subset=["timestamp"]).sort_values("timestamp").reset_index(drop=True)
+        if resolution_minutes > 0:
+            df = _resample_dataframe(df, resolution_minutes=resolution_minutes)
 
     raw_factors_json = json.dumps(factors, indent=2)
 
     return WindowFetchResult(df=df, factors=factors, raw_factors_json=raw_factors_json)
+
+
+def _resample_dataframe(df: pd.DataFrame, *, resolution_minutes: int) -> pd.DataFrame:
+    """Resample to a fixed minute cadence and interpolate numeric columns.
+
+    Carbon Intensity API is coarser (typically 30-minute intervals). This helper
+    creates evenly spaced rows (for example 5-minute cadence) so downstream
+    analysis has denser time steps.
+    """
+    if df.empty or "timestamp" not in df.columns or resolution_minutes <= 0:
+        return df
+
+    out = df.copy().sort_values("timestamp")
+    out = out.set_index("timestamp")
+    rule = f"{resolution_minutes}min"
+
+    # Build regular time grid from the observed window.
+    out = out.resample(rule).asfreq()
+
+    # Numeric signals (intensity, fuel percentages) get time interpolation.
+    numeric_cols = out.select_dtypes(include=["number"]).columns
+    if len(numeric_cols) > 0:
+        out[numeric_cols] = out[numeric_cols].interpolate(method="time").ffill().bfill()
+
+    # Categorical values (e.g., intensity_index) are carried forward/backward.
+    categorical_cols = [c for c in out.columns if c not in numeric_cols]
+    for col in categorical_cols:
+        out[col] = out[col].ffill().bfill()
+
+    # Keep interval_end aligned with the chosen resolution.
+    out["interval_end"] = out.index + pd.to_timedelta(resolution_minutes, unit="m")
+
+    return out.reset_index()
