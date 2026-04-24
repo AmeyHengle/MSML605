@@ -7,6 +7,17 @@ from sklearn.decomposition import PCA
 from sklearn.metrics import r2_score, mean_squared_error
 from sklearn.preprocessing import StandardScaler
 from typing import Optional
+
+from pathlib import Path
+import sys
+
+_SRC = Path(__file__).resolve().parent / "src"
+if _SRC.exists() and str(_SRC) not in sys.path:
+    sys.path.insert(0, str(_SRC))
+
+from ml605_pipeline.drift import compute_psi as shared_compute_psi
+from ml605_pipeline.features import add_time_features, ensure_feature_columns
+
 import pickle, os
 
 ENERGY_FEATURES = [
@@ -22,14 +33,9 @@ def ks_severity(ks: float) -> str:
     else:           return 'critical'
 
 def compute_psi(ref: np.ndarray, cur: np.ndarray, n_bins: int = 10) -> float:
-    bins = np.unique(np.quantile(ref, np.linspace(0, 1, n_bins + 1)))
-    if len(bins) < 2:
-        return 0.0
-    ref_c, _ = np.histogram(ref, bins=bins)
-    cur_c, _ = np.histogram(cur, bins=bins)
-    ref_p = np.where(ref_c == 0, 1e-6, ref_c / len(ref))
-    cur_p = np.where(cur_c == 0, 1e-6, cur_c / len(cur))
-    return float(np.sum((cur_p - ref_p) * np.log(cur_p / ref_p)))
+    # Delegate PSI computation to shared drift kernel for consistency across
+    # interactive API simulation and batch pipeline execution.
+    return shared_compute_psi(ref, cur, bins=n_bins)
 
 def compute_rmse(y_true: np.ndarray, y_pred: np.ndarray) -> float:
     return float(np.sqrt(mean_squared_error(y_true, y_pred)))
@@ -102,8 +108,13 @@ class PipelineState:
         self.models_dir   = config.get('models_dir',   'models')
         self.data_path    = config.get('data_path',    'data/historical_data.csv')
 
-        df = pd.read_csv(self.data_path, parse_dates=['timestamp'])
-        df = df.drop(columns=[c for c in df.columns if c.startswith('factor_')])
+        df = pd.read_csv(self.data_path)
+        if 'timestamp' in df.columns:
+            df['timestamp'] = pd.to_datetime(df['timestamp'], utc=True, errors='coerce')
+        df = df.dropna(subset=['timestamp']).reset_index(drop=True)
+        df = add_time_features(df)
+        df = ensure_feature_columns(df, ENERGY_FEATURES + [self.feature_y])
+        df = df.drop(columns=[c for c in df.columns if c.startswith('factor_')], errors='ignore')
         df['period'] = df['timestamp'].dt.to_period('M')
         self.df      = df
         self.months  = sorted(df['period'].unique())

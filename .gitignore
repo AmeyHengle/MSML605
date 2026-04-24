@@ -7,3 +7,4 @@ __pycache__/
 dora_metrics.json
 .coverage
 .pytest_cache/
+merge_files/
