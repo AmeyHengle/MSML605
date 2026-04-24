@@ -12,7 +12,7 @@ import os
 import json
 import pytest
 import requests
-
+import time
 BASE_URL = os.getenv('BASE_URL', 'http://localhost:8000')
 
 VALID_CONFIG = {
@@ -28,12 +28,34 @@ VALID_CONFIG = {
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
-def initialize(config=None):
-    return requests.post(
-        f'{BASE_URL}/api/initialize',
-        json=config or VALID_CONFIG,
-        timeout=60       # initialization can take 10–30s on cold start
-    )
+def initialize(config=None, retries=3, base_sleep=1.5):
+    """
+    Call /api/initialize with small retries to tolerate transient Render 5xx/HTML responses.
+    """
+    last_exc = None
+    for attempt in range(1, retries + 1):
+        try:
+            r = requests.post(
+                f'{BASE_URL}/api/initialize',
+                json=config or VALID_CONFIG,
+                timeout=90,  # cold starts can be slow
+            )
+
+            # Retry on transient server-side errors
+            if r.status_code >= 500:
+                raise RuntimeError(f"/api/initialize returned {r.status_code}: {r.text[:200]}")
+
+            # Ensure body is JSON (Render edge can occasionally return HTML)
+            r.json()
+            return r
+
+        except Exception as exc:
+            last_exc = exc
+            if attempt == retries:
+                raise
+            time.sleep(base_sleep * attempt)
+
+    raise RuntimeError(f"initialize() failed after retries: {last_exc}")
 
 def reset():
     return requests.post(f'{BASE_URL}/api/reset', timeout=10)
