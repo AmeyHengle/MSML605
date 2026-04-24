@@ -13,6 +13,7 @@ import pandas as pd
 from ml605_pipeline.config import load_config_from_env
 from ml605_pipeline.data import fetch_window_dataframe
 from ml605_pipeline.drift import detect_drift
+from ml605_pipeline.drift_service import decide_drift
 from ml605_pipeline.features import (
     add_time_features,
     apply_factor_columns,
@@ -69,6 +70,18 @@ def main() -> None:
         feature_cols=numeric_cols,
         psi_threshold=cfg.psi_threshold,
     )
+
+    # Also compute unified single-feature decision on gas when available
+    if "gas" in ref_df.columns and "gas" in df.columns:
+        d = decide_drift(
+            ref_df["gas"].dropna().to_numpy(),
+            df["gas"].dropna().to_numpy(),
+            ks_stat_threshold=cfg.ks_threshold,
+            ks_alpha=0.05,
+            psi_threshold=cfg.psi_threshold,
+            psi_bins=10,
+        )
+        print(f"[batch] gas_ks_stat={d.ks_stat:.4f} gas_ks_p={d.ks_p_value:.6f} gas_psi={d.psi:.4f}")
 
     print(f"[batch] rows_fetched={len(df)}")
     print(f"[batch] overall_drift={report.overall_drift}")
