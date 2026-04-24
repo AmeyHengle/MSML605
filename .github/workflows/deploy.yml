@@ -5,12 +5,7 @@ on:
     branches:
       - amey-demo
 
-# ── Shared Slack helper ────────────────────────────────────────────────────────
-# Referenced by both the failure-notify and rollback-notify jobs.
-# SLACK_WEBHOOK_URL must be set in GitHub Secrets.
-
 jobs:
-
   # ── Job 1: Unit tests (gate) ─────────────────────────────────────────────────
   unit-tests:
     name: Unit tests — pipeline.py
@@ -20,18 +15,17 @@ jobs:
         with:
           ref: amey-demo
 
-      - name: Set up uv
-        uses: astral-sh/setup-uv@v4
+      - uses: actions/setup-python@v5
         with:
-          version: "0.10.10"
-          python-version: "3.13"
+          python-version: '3.11'
+          cache: 'pip'
 
       - name: Install dependencies
-        run: uv sync --extra dev
+        run: pip install -r requirements.txt pytest pytest-cov
 
       - name: Run unit tests
         run: |
-          uv run pytest tests/test_pipeline.py -v \
+          pytest tests/test_pipeline.py -v \
             --tb=short \
             --cov=pipeline \
             --cov-report=term-missing \
@@ -66,6 +60,11 @@ jobs:
     steps:
       - name: Ping Render deploy webhook
         run: |
+          if [ -z "${{ secrets.RENDER_DEPLOY_HOOK_URL }}" ]; then
+            echo "Missing RENDER_DEPLOY_HOOK_URL secret"
+            exit 1
+          fi
+
           STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
             --request POST \
             "${{ secrets.RENDER_DEPLOY_HOOK_URL }}")
@@ -85,14 +84,13 @@ jobs:
         with:
           ref: amey-demo
 
-      - name: Set up uv
-        uses: astral-sh/setup-uv@v4
+      - uses: actions/setup-python@v5
         with:
-          version: "0.10.10"
-          python-version: "3.13"
+          python-version: '3.11'
+          cache: 'pip'
 
       - name: Install test dependencies
-        run: uv sync --extra dev
+        run: pip install requests pytest pytest-timeout
 
       - name: Poll until service is live
         run: |
@@ -111,7 +109,7 @@ jobs:
 
       - name: Run smoke tests
         run: |
-          uv run pytest tests/test_api.py -v \
+          pytest tests/test_api.py -v \
             --tb=short \
             -k "not TestSimulate" \
             --timeout=60
@@ -120,8 +118,6 @@ jobs:
           PYTHONPATH: .
 
   # ── Job 5: Slack alert on failure ─────────────────────────────────────────────
-  # Runs when ANY of the above jobs fail.
-  # Skipped if commit message starts with "Revert" (prevents alert loop).
   notify-failure:
     name: Slack alert — deploy failed
     runs-on: ubuntu-latest
@@ -258,17 +254,16 @@ jobs:
         with:
           ref: amey-demo
 
-      - name: Set up uv
-        uses: astral-sh/setup-uv@v4
+      - uses: actions/setup-python@v5
         with:
-          version: "0.10.10"
-          python-version: "3.13"
+          python-version: '3.11'
+          cache: 'pip'
 
       - name: Install dependencies
-        run: uv sync --extra dev
+        run: pip install requests python-dateutil
 
       - name: Compute DORA metrics
-        run: uv run python scripts/dora_metrics.py
+        run: python scripts/dora_metrics.py
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPO: AmeyHengle/MSML605
