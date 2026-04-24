@@ -15,3 +15,7 @@ data/windows/*.csv
 .DS_Store
 Untitled
 data/windows/*.csv
+
+server.log
+data/windows/*.csv
+.DS_Store
