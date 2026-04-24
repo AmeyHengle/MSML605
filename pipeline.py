@@ -16,6 +16,7 @@ if _SRC.exists() and str(_SRC) not in sys.path:
     sys.path.insert(0, str(_SRC))
 
 from ml605_pipeline.drift import compute_psi as shared_compute_psi
+from ml605_pipeline.features import add_time_features, ensure_feature_columns
 
 import pickle, os
 
@@ -107,8 +108,13 @@ class PipelineState:
         self.models_dir   = config.get('models_dir',   'models')
         self.data_path    = config.get('data_path',    'data/historical_data.csv')
 
-        df = pd.read_csv(self.data_path, parse_dates=['timestamp'])
-        df = df.drop(columns=[c for c in df.columns if c.startswith('factor_')])
+        df = pd.read_csv(self.data_path)
+        if 'timestamp' in df.columns:
+            df['timestamp'] = pd.to_datetime(df['timestamp'], utc=True, errors='coerce')
+        df = df.dropna(subset=['timestamp']).reset_index(drop=True)
+        df = add_time_features(df)
+        df = ensure_feature_columns(df, ENERGY_FEATURES + [self.feature_y])
+        df = df.drop(columns=[c for c in df.columns if c.startswith('factor_')], errors='ignore')
         df['period'] = df['timestamp'].dt.to_period('M')
         self.df      = df
         self.months  = sorted(df['period'].unique())
