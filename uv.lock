@@ -1176,6 +1176,7 @@ dev = [
     { name = "pytest-cov" },
     { name = "pytest-timeout" },
     { name = "python-dateutil" },
+    { name = "requests" },
 ]
 
 [package.dev-dependencies]
@@ -1198,6 +1199,7 @@ requires-dist = [
     { name = "python-dateutil", marker = "extra == 'dev'", specifier = ">=2.9.0" },
     { name = "python-dotenv", specifier = ">=1.0.1" },
     { name = "requests", specifier = ">=2.32.3" },
+    { name = "requests", marker = "extra == 'dev'", specifier = ">=2.32.3" },
     { name = "scikit-learn", specifier = ">=1.5.1" },
     { name = "scipy", specifier = ">=1.13.1" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.30.6" },
