@@ -8,3 +8,10 @@ dora_metrics.json
 .coverage
 .pytest_cache/
 merge_files/
+.DS_Store
+Untitled
+data/windows/*.csv
+
+.DS_Store
+Untitled
+data/windows/*.csv
