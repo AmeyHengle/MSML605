@@ -37,6 +37,11 @@ def main() -> None:
     df = add_time_features(df)
     df = apply_factor_columns(df, result.factors)
 
+    out_csv = cfg.output_csv
+    out_csv.parent.mkdir(parents=True, exist_ok=True)
+    df.to_csv(out_csv, index=False)
+    print(f"[batch] window_csv={out_csv}")
+
     feature_cols = load_feature_list(cfg.features_path)
     df = ensure_feature_columns(df, feature_cols)
 

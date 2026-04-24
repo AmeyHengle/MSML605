@@ -16,7 +16,8 @@ class PipelineConfig:
     ks_threshold: float = 0.10
     psi_threshold: float = 0.25
 
-    # Paths
+    # Project root + canonical paths
+    project_root: Path = Path(".")
     data_dir: Path = Path("data")
     windows_dir: Path = Path("data/windows")
     reference_data_path: Path = Path("data/historical_data.csv")
@@ -44,11 +45,28 @@ class PipelineConfig:
         return self.windows_dir / f"window_{self.window_label}.csv"
 
 
+def _resolve_path(root: Path, raw: str) -> Path:
+    p = Path(raw)
+    return p if p.is_absolute() else (root / p)
+
+
 def load_config_from_env() -> PipelineConfig:
+    root = Path(getenv("PROJECT_ROOT", ".")).resolve()
+
+    data_dir = _resolve_path(root, getenv("DATA_DIR", "data"))
+    windows_dir = _resolve_path(root, getenv("WINDOWS_DIR", "data/windows"))
+    reference_data_path = _resolve_path(root, getenv("REFERENCE_DATA_PATH", "data/historical_data.csv"))
+    features_path = _resolve_path(root, getenv("FEATURES_PATH", "features_used.txt"))
+
     return PipelineConfig(
         window_hours=int(getenv("PIPELINE_WINDOW_HOURS", "12")),
         interval_seconds=int(getenv("PIPELINE_INTERVAL_SECONDS", "30")),
         ks_threshold=float(getenv("PIPELINE_KS_THRESHOLD", "0.10")),
         psi_threshold=float(getenv("PIPELINE_PSI_THRESHOLD", "0.25")),
+        project_root=root,
+        data_dir=data_dir,
+        windows_dir=windows_dir,
+        reference_data_path=reference_data_path,
+        features_path=features_path,
         mcp_base_url=getenv("MCP_BASE_URL", "http://localhost:8001"),
     )
