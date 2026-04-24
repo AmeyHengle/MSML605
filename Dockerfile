@@ -1,14 +1,23 @@
-FROM python:3.11-slim
+FROM python:3.13-slim
 
 WORKDIR /app
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Install uv
+RUN pip install --no-cache-dir uv
 
-COPY main.py pipeline.py ./
+# Install dependencies first (better layer caching)
+COPY pyproject.toml uv.lock ./
+RUN uv sync --frozen --no-dev
+
+# App code
+COPY main.py pipeline.py monitoring.py ./
+COPY src/ ./src/
 COPY data/ ./data/
 
 RUN mkdir -p models
+
+# Use the uv virtualenv by default
+ENV PATH="/app/.venv/bin:$PATH"
 
 EXPOSE 8000
 

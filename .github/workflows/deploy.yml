@@ -24,17 +24,18 @@ jobs:
         with:
           ref: amey-demo
 
-      - uses: actions/setup-python@v5
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v4
         with:
-          python-version: '3.11'
-          cache: 'pip'
+          version: "0.10.10"
+          python-version: "3.13"
 
       - name: Install dependencies
-        run: pip install -r requirements.txt pytest pytest-cov
+        run: uv sync --dev
 
       - name: Run unit tests
         run: |
-          pytest tests/test_pipeline.py -v \
+          uv run pytest tests/test_pipeline.py -v \
             --tb=short \
             --cov=pipeline \
             --cov-report=term-missing \
@@ -125,13 +126,14 @@ jobs:
         with:
           ref: amey-demo
 
-      - uses: actions/setup-python@v5
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v4
         with:
-          python-version: '3.11'
-          cache: 'pip'
+          version: "0.10.10"
+          python-version: "3.13"
 
       - name: Install test dependencies
-        run: pip install requests pytest pytest-timeout
+        run: uv sync --dev
 
       - name: Poll until service is live
         run: |
@@ -150,7 +152,7 @@ jobs:
 
       - name: Run smoke tests
         run: |
-          pytest tests/test_api.py -v \
+          uv run pytest tests/test_api.py -v \
             --tb=short \
             -k "not TestSimulate" \
             --timeout=60
@@ -303,15 +305,17 @@ jobs:
         with:
           ref: amey-demo
 
-      - uses: actions/setup-python@v5
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v4
         with:
-          python-version: '3.11'
+          version: "0.10.10"
+          python-version: "3.13"
 
       - name: Install dependencies
-        run: pip install requests python-dateutil
+        run: uv sync --dev
 
       - name: Compute DORA metrics
-        run: python scripts/dora_metrics.py
+        run: uv run python scripts/dora_metrics.py
         env:
           GITHUB_TOKEN:  ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPO:   AmeyHengle/MSML605
