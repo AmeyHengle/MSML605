@@ -3,11 +3,11 @@ import asyncio
 import json
 import numpy as np
 from typing import Optional, List
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from pipeline import PipelineState
+from pipeline import PipelineState, ENERGY_FEATURES
 
 try:
     from monitoring import get_current_metrics, cloudwatch_stream
@@ -26,7 +26,7 @@ app.add_middleware(
 
 # ── Shared state ──────────────────────────────────────────────────────────────
 _state: Optional[PipelineState] = None
-_simulation_running: bool       = False
+_simulation_running: bool = False
 
 
 class NumpyEncoder(json.JSONEncoder):
@@ -57,8 +57,16 @@ class PredictRequest(BaseModel):
 @app.post('/api/initialize')
 async def initialize(config: InitConfig):
     global _state, _simulation_running
+
+    # Validate feature_x early so bad input returns 4xx instead of uncaught KeyError -> 500.
+    if config.feature_x not in ENERGY_FEATURES:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Invalid feature_x '{config.feature_x}'. Must be one of: {', '.join(ENERGY_FEATURES)}",
+        )
+
     _simulation_running = False
-    _state  = PipelineState(config.model_dump())
+    _state = PipelineState(config.model_dump())
     payload = _state.initialize()
     return {'status': 'ok', 'data': payload}
 
@@ -147,7 +155,7 @@ async def predict(req: PredictRequest):
     """
     if _state is None or _state.model is None:
         return {'error': 'model not initialized — call /api/initialize first'}
-    X    = np.array(req.features).reshape(1, -1)
+    X = np.array(req.features).reshape(1, -1)
     pred = float(_state.model.predict(X)[0])
     return {'forecast_intensity': round(pred, 2)}
 
