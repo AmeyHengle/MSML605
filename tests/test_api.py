@@ -28,24 +28,31 @@ VALID_CONFIG = {
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
-def initialize(config=None, retries=3, base_sleep=1.5):
-    """
-    Call /api/initialize with small retries to tolerate transient Render 5xx/HTML responses.
-    """
+def _request_json(
+    method: str,
+    path: str,
+    *,
+    payload=None,
+    retries: int = 3,
+    base_sleep: float = 1.5,
+    timeout: int = 30,
+    allow_server_error: bool = False,
+):
     last_exc = None
+    url = f"{BASE_URL}{path}"
+
     for attempt in range(1, retries + 1):
         try:
-            r = requests.post(
-                f'{BASE_URL}/api/initialize',
-                json=config or VALID_CONFIG,
-                timeout=90,  # cold starts can be slow
-            )
+            if method.upper() == "GET":
+                r = requests.get(url, timeout=timeout)
+            else:
+                r = requests.post(url, json=payload, timeout=timeout)
 
-            # Retry on transient server-side errors
-            if r.status_code >= 500:
-                raise RuntimeError(f"/api/initialize returned {r.status_code}: {r.text[:200]}")
+            # Retry transient 5xx unless caller explicitly allows it
+            if r.status_code >= 500 and not allow_server_error:
+                raise RuntimeError(f"{path} returned {r.status_code}: {r.text[:200]}")
 
-            # Ensure body is JSON (Render edge can occasionally return HTML)
+            # Ensure response is JSON (Render edge can occasionally return HTML)
             r.json()
             return r
 
@@ -55,14 +62,27 @@ def initialize(config=None, retries=3, base_sleep=1.5):
                 raise
             time.sleep(base_sleep * attempt)
 
-    raise RuntimeError(f"initialize() failed after retries: {last_exc}")
+    raise RuntimeError(f"{method} {path} failed after retries: {last_exc}")
+
+
+def initialize(config=None, retries=3, base_sleep=1.5, allow_server_error=False):
+    return _request_json(
+        "POST",
+        "/api/initialize",
+        payload=config or VALID_CONFIG,
+        retries=retries,
+        base_sleep=base_sleep,
+        timeout=90,
+        allow_server_error=allow_server_error,
+    )
+
 
 def reset():
-    return requests.post(f'{BASE_URL}/api/reset', timeout=10)
+    return _request_json("POST", "/api/reset", timeout=15)
+
 
 def status():
-    return requests.get(f'{BASE_URL}/api/status', timeout=10)
-
+    return _request_json("GET", "/api/status", timeout=15)
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 @pytest.fixture(autouse=True)
@@ -177,7 +197,7 @@ class TestInitialize:
 
     def test_invalid_feature_x_returns_error(self):
         bad_config = {**VALID_CONFIG, 'feature_x': 'not_a_real_feature'}
-        r = initialize(bad_config)
+        r = initialize(bad_config, allow_server_error=True)
         # Should return 4xx or 5xx, not silently succeed
         assert r.status_code >= 400 or 'error' in r.json()
 
