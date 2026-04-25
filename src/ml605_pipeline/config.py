@@ -20,6 +20,7 @@ class PipelineConfig:
     project_root: Path = Path(".")
     data_dir: Path = Path("data")
     windows_dir: Path = Path("data/windows")
+    reports_dir: Path = Path("data/reports")
     reference_data_path: Path = Path("data/historical_data.csv")
     features_path: Path = Path("features_used.txt")
 
@@ -55,6 +56,7 @@ def load_config_from_env() -> PipelineConfig:
 
     data_dir = _resolve_path(root, getenv("DATA_DIR", "data"))
     windows_dir = _resolve_path(root, getenv("WINDOWS_DIR", "data/windows"))
+    reports_dir = _resolve_path(root, getenv("REPORTS_DIR", "data/reports"))
     reference_data_path = _resolve_path(root, getenv("REFERENCE_DATA_PATH", "data/historical_data.csv"))
     features_path = _resolve_path(root, getenv("FEATURES_PATH", "features_used.txt"))
 
@@ -66,6 +68,7 @@ def load_config_from_env() -> PipelineConfig:
         project_root=root,
         data_dir=data_dir,
         windows_dir=windows_dir,
+        reports_dir=reports_dir,
         reference_data_path=reference_data_path,
         features_path=features_path,
         mcp_base_url=getenv("MCP_BASE_URL", "http://localhost:8001"),

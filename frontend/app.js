@@ -30,6 +30,7 @@ const btnSim      = document.getElementById('btn-simulate');
 const btnPause    = document.getElementById('btn-pause');
 const btnReset    = document.getElementById('btn-reset');
 const btnAgentRun = document.getElementById('btn-agent-run');
+const btnAgentReport = document.getElementById('btn-agent-report');
 const btnAgentToggle = document.getElementById('btn-agent-toggle');
 const btnAgentRefresh = document.getElementById('btn-agent-refresh');
 const cfgSpeed    = document.getElementById('cfg-speed');
@@ -43,6 +44,7 @@ const agentLogBody = document.getElementById('agent-log-body');
 let agentPollTimer = null;
 let agentLogsVisible = true;
 let lastAgentLogCount = 0;
+let latestAgentReportUrl = null;
 
 cfgSpeed.addEventListener('input', () => {
   cfgSpeedVal.textContent = parseFloat(cfgSpeed.value).toFixed(1) + 's';
@@ -290,6 +292,11 @@ function flashDrift(id) {
 
 function renderAgentStatus(s) {
   if (!agentStatusEl || !s) return;
+  latestAgentReportUrl = s.report_available && s.report_url ? `${API}${s.report_url}` : null;
+  if (btnAgentReport) {
+    btnAgentReport.disabled = !latestAgentReportUrl;
+    btnAgentReport.title = latestAgentReportUrl ? 'Open latest drift report' : 'No report generated yet';
+  }
   if (agentBadge) {
     agentBadge.className = 'pill';
     agentBadge.textContent = (s.status || 'idle').toUpperCase();
@@ -596,6 +603,13 @@ btnAgentToggle.addEventListener('click', () => {
 btnAgentRefresh.addEventListener('click', () => {
   fetchAgentLogs();
 });
+
+if (btnAgentReport) {
+  btnAgentReport.addEventListener('click', () => {
+    if (!latestAgentReportUrl) return;
+    window.open(latestAgentReportUrl, '_blank', 'noopener,noreferrer');
+  });
+}
 
 fetchAgentStatus();
 fetchAgentLogs();

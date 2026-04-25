@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Optional, List
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 from pipeline import PipelineState, ENERGY_FEATURES
 
@@ -44,6 +44,7 @@ _agent_job = {
     'ended_at': None,
     'exit_code': None,
     'error': None,
+    'report_path': None,
     'logs': deque(maxlen=200),
 }
 
@@ -53,6 +54,8 @@ def _utc_now_iso() -> str:
 
 
 def _agent_status_payload() -> dict:
+    report_path = _agent_job.get('report_path')
+    report_available = bool(report_path and Path(report_path).exists())
     return {
         'available': _agent_job['available'],
         'running': _agent_job['running'],
@@ -62,6 +65,9 @@ def _agent_status_payload() -> dict:
         'ended_at': _agent_job['ended_at'],
         'exit_code': _agent_job['exit_code'],
         'error': _agent_job['error'],
+        'report_path': report_path,
+        'report_available': report_available,
+        'report_url': '/api/agent/report/latest' if report_available else None,
         'log_lines': len(_agent_job['logs']),
     }
 
@@ -82,7 +88,11 @@ def _run_agent_job(job_id: str) -> None:
         if proc.stdout is not None:
             for line in proc.stdout:
                 with _agent_lock:
-                    _agent_job['logs'].append(line.rstrip())
+                    log_line = line.rstrip()
+                    _agent_job['logs'].append(log_line)
+                    marker = '[batch] report_html='
+                    if log_line.startswith(marker):
+                        _agent_job['report_path'] = log_line.split(marker, 1)[1].strip()
         exit_code = proc.wait()
         with _agent_lock:
             _agent_job['running'] = False
@@ -261,6 +271,7 @@ async def agent_logs():
         return {
             'job_id': _agent_job['job_id'],
             'running': _agent_job['running'],
+            'report_path': _agent_job.get('report_path'),
             'logs': list(_agent_job['logs']),
         }
 
@@ -281,12 +292,35 @@ async def agent_run():
         _agent_job['ended_at'] = None
         _agent_job['exit_code'] = None
         _agent_job['error'] = None
+        _agent_job['report_path'] = None
         _agent_job['logs'].clear()
         _agent_job['logs'].append(f'[{_agent_job["started_at"]}] agent run started')
 
     t = threading.Thread(target=_run_agent_job, args=(job_id,), daemon=True)
     t.start()
     return {'status': 'started', 'job_id': job_id}
+
+
+@app.get('/api/agent/report/latest')
+async def agent_report_latest():
+    with _agent_lock:
+        report_path_raw = _agent_job.get('report_path')
+
+    if not report_path_raw:
+        raise HTTPException(status_code=404, detail='No report generated yet')
+
+    report_path = Path(report_path_raw).expanduser().resolve()
+    project_root = Path(__file__).resolve().parent
+    if project_root not in report_path.parents:
+        raise HTTPException(status_code=400, detail='Invalid report path')
+    if not report_path.exists() or not report_path.is_file():
+        raise HTTPException(status_code=404, detail='Report file not found')
+
+    return FileResponse(
+        str(report_path),
+        media_type='text/html',
+        filename=report_path.name,
+    )
 
 
 # ── Monitoring routes (Page 2 — requires AWS CloudWatch) ─────────────────────
