@@ -5,7 +5,7 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY main.py pipeline.py monitoring.py run_batch_pipeline.py ./
+COPY main.py pipeline.py monitoring.py run_batch_pipeline.py features_used.txt ./
 COPY src/ ./src/
 COPY data/ ./data/
 

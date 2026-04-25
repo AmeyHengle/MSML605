@@ -131,6 +131,11 @@ def main() -> None:
     df.to_csv(out_csv, index=False)
     print(f"[batch] window_csv={out_csv}")
 
+    if not cfg.features_path.exists():
+        print(f"[batch] features file not found: {cfg.features_path}")
+        print("[batch] cannot compute drift without features list")
+        return
+
     feature_cols = load_feature_list(cfg.features_path)
     df = ensure_feature_columns(df, feature_cols)
 
