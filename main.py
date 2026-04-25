@@ -131,7 +131,7 @@ class PredictRequest(BaseModel):
 async def initialize(config: InitConfig):
     global _state, _simulation_running
 
-    # Validate feature_x early so bad input returns 4xx instead of uncaught KeyError -> 500.
+    # Validate early so bad input returns 4xx instead of internal KeyError.
     if config.feature_x not in ENERGY_FEATURES:
         raise HTTPException(
             status_code=422,
@@ -139,7 +139,7 @@ async def initialize(config: InitConfig):
         )
 
     _simulation_running = False
-    _state = PipelineState(config.model_dump())
+    _state  = PipelineState(config.model_dump())
     payload = _state.initialize()
     return {'status': 'ok', 'data': payload}
 
@@ -228,7 +228,7 @@ async def predict(req: PredictRequest):
     """
     if _state is None or _state.model is None:
         return {'error': 'model not initialized — call /api/initialize first'}
-    X = np.array(req.features).reshape(1, -1)
+    X    = np.array(req.features).reshape(1, -1)
     pred = float(_state.model.predict(X)[0])
     return {'forecast_intensity': round(pred, 2)}
 
