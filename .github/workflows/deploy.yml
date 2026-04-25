@@ -198,7 +198,16 @@ jobs:
           FAILED_SHA="${{ github.sha }}"
           SHORT_SHA="${FAILED_SHA:0:7}"
           echo "Reverting commit $SHORT_SHA..."
-          git revert HEAD --no-edit
+
+          # If HEAD is a merge commit, revert using mainline parent 1.
+          PARENT_COUNT=$(git rev-list --parents -n 1 HEAD | awk '{print NF-1}')
+          if [ "$PARENT_COUNT" -gt 1 ]; then
+            echo "HEAD is a merge commit; using git revert -m 1"
+            git revert -m 1 HEAD --no-edit
+          else
+            git revert HEAD --no-edit
+          fi
+
           git push origin amey-demo
           echo "Revert pushed — new deploy will trigger automatically"
 
