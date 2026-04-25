@@ -253,7 +253,133 @@ jobs:
               }]
             }"
 
-  # ── Job 7: DORA metrics (always runs) ─────────────────────────────────────────
+  # ── Job 7: Post retrain/drift report to Slack ─────────────────────────────────
+  post-drift-report:
+    name: Slack report — deployed drift snapshot
+    runs-on: ubuntu-latest
+    needs: [deploy-backend, smoke-tests]
+    if: ${{ needs.smoke-tests.result == 'success' && !startsWith(github.event.head_commit.message, 'Revert') }}
+    steps:
+      - name: Trigger agent run on deployed service
+        env:
+          RENDER_URL: ${{ secrets.RENDER_URL }}
+        run: |
+          echo "Triggering agent run on ${RENDER_URL}..."
+          curl -fsS -X POST "${RENDER_URL}/api/agent/run" > /tmp/agent_run.json
+          cat /tmp/agent_run.json
+
+      - name: Wait for agent completion
+        env:
+          RENDER_URL: ${{ secrets.RENDER_URL }}
+        run: |
+          MAX=24
+          COUNT=0
+          while true; do
+            COUNT=$((COUNT+1))
+            curl -fsS "${RENDER_URL}/api/agent/status" > /tmp/agent_status.json
+            RUNNING=$(python3 -c "import json; print('true' if json.load(open('/tmp/agent_status.json')).get('running') else 'false')")
+            STATUS=$(python3 -c "import json; print(json.load(open('/tmp/agent_status.json')).get('status', 'unknown'))")
+            echo "poll ${COUNT}/${MAX} running=${RUNNING} status=${STATUS}"
+            if [ "$RUNNING" = "false" ]; then
+              break
+            fi
+            if [ $COUNT -ge $MAX ]; then
+              echo "Agent did not finish in time"
+              break
+            fi
+            sleep 10
+          done
+          curl -fsS "${RENDER_URL}/api/agent/logs" > /tmp/agent_logs.json
+
+      - name: Send Slack drift report summary
+        env:
+          RENDER_URL: ${{ secrets.RENDER_URL }}
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          if [ -z "$SLACK_WEBHOOK_URL" ]; then
+            echo "SLACK_WEBHOOK_URL is empty; skipping drift report notification"
+            exit 0
+          fi
+
+          python3 - <<'PY'
+          import json
+          import os
+          import re
+          import urllib.request
+
+          status = json.load(open("/tmp/agent_status.json"))
+          logs_payload = json.load(open("/tmp/agent_logs.json"))
+          logs = logs_payload.get("logs", [])
+
+          def extract(pattern, default="n/a"):
+              rx = re.compile(pattern)
+              for line in reversed(logs):
+                  m = rx.search(line)
+                  if m:
+                      return m.group(1)
+              return default
+
+          rows_fetched = extract(r"\[batch\]\s+rows_fetched=(.+)")
+          overall_drift = extract(r"\[batch\]\s+overall_drift=(.+)")
+          drift_score = extract(r"\[batch\]\s+drift_score\(max_psi\)=(.+)")
+          drifted_features = extract(r"\[batch\]\s+drifted_features=(.+)")
+          retrain_performed = extract(r"\[batch\]\s+retrain_performed=(.+)", "false").strip().lower()
+          if retrain_performed != "true":
+              print("No retrain was performed in this run; skipping Slack drift report.")
+              raise SystemExit(0)
+          agent_status = status.get("status", "unknown")
+          exit_code = status.get("exit_code", "n/a")
+          report_available = bool(status.get("report_available"))
+          report_url = f"{os.environ['RENDER_URL']}/api/agent/report/latest" if report_available else "not available"
+
+          color = "#2eb67d" if agent_status == "succeeded" else "#f5a623"
+          title = f":bar_chart: Drift report after deploy — {os.environ['BRANCH']}"
+
+          payload = {
+              "attachments": [{
+                  "color": color,
+                  "blocks": [
+                      {
+                          "type": "header",
+                          "text": {"type": "plain_text", "text": title, "emoji": True},
+                      },
+                      {
+                          "type": "section",
+                          "fields": [
+                              {"type": "mrkdwn", "text": f"*Agent status*\n{agent_status} (exit {exit_code})"},
+                              {"type": "mrkdwn", "text": f"*Rows fetched*\n{rows_fetched}"},
+                              {"type": "mrkdwn", "text": f"*Overall drift*\n{overall_drift}"},
+                              {"type": "mrkdwn", "text": f"*Retrain performed*\n{retrain_performed}"},
+                              {"type": "mrkdwn", "text": f"*Drift score (max PSI)*\n{drift_score}"},
+                              {"type": "mrkdwn", "text": f"*Drifted features*\n{drifted_features}"},
+                              {"type": "mrkdwn", "text": f"*HTML report*\n{report_url}"},
+                          ],
+                      },
+                      {
+                          "type": "actions",
+                          "elements": [{
+                              "type": "button",
+                              "text": {"type": "plain_text", "text": "View workflow run"},
+                              "url": os.environ["RUN_URL"],
+                          }],
+                      },
+                  ],
+              }]
+          }
+
+          req = urllib.request.Request(
+              os.environ["SLACK_WEBHOOK_URL"],
+              data=json.dumps(payload).encode("utf-8"),
+              headers={"Content-Type": "application/json"},
+              method="POST",
+          )
+          with urllib.request.urlopen(req) as resp:
+              print(resp.read().decode("utf-8", errors="ignore"))
+          PY
+
+  # ── Job 8: DORA metrics (always runs) ─────────────────────────────────────────
   record-dora:
     name: Record DORA metrics
     runs-on: ubuntu-latest

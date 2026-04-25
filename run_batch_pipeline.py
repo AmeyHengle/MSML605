@@ -184,6 +184,10 @@ def main() -> None:
     print(f"[batch] overall_drift={report.overall_drift}")
     print(f"[batch] drift_score(max_psi)={report.drift_score:.4f}")
     print(f"[batch] drifted_features={report.drifted_features[:10]}")
+    # Current batch flow does not train a new model artifact; treat drift detection
+    # as the retrain trigger signal used by CI notifications.
+    retrain_performed = bool(report.overall_drift)
+    print(f"[batch] retrain_performed={str(retrain_performed).lower()}")
 
     cfg.reports_dir.mkdir(parents=True, exist_ok=True)
     report_path = cfg.reports_dir / f"drift_report_{cfg.window_label}.html"
