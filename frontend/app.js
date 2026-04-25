@@ -9,8 +9,8 @@ let initialized = false;
 let simRunning  = false;
 let logCount    = 0;
 
-let kdeStore   = {};
-let kdeFeature = 'coal';
+let kdeStore    = {};
+let kdeFeature  = 'coal';
 let driftLabels = [];
 let ksHistory   = [];
 let psiHistory  = [];
@@ -89,11 +89,11 @@ function makeLayout(xLabel, yLabel, xrange, yrange) {
     plot_bgcolor:  t.plot,
     font:   { family: "'DM Mono', monospace", color: t.text, size: 10 },
     xaxis:  { title: { text: xLabel, font: { size: 10 } },
-               gridcolor: t.grid, zeroline: false, color: t.text,
-               range: xrange || null },
+              gridcolor: t.grid, zeroline: false, color: t.text,
+              range: xrange || null },
     yaxis:  { title: { text: yLabel, font: { size: 10 } },
-               gridcolor: t.grid, zeroline: false, color: t.text,
-               range: yrange || null },
+              gridcolor: t.grid, zeroline: false, color: t.text,
+              range: yrange || null },
     margin: { l: 52, r: 16, t: 12, b: 44 },
     showlegend: true,
     legend: { bgcolor: 'rgba(0,0,0,0)', font: { size: 9 }, x: 0, y: 1 },
@@ -108,6 +108,7 @@ function initPcaPlot(pca_x, pca_y, line_pc1, line_y) {
   pcaTrainingY = [...pca_y];
   pcaIncomingX = [];
   pcaIncomingY = [];
+
   Plotly.newPlot('plot-pca', [
     {
       x: pca_x, y: pca_y, mode: 'markers', type: 'scatter', name: 'Model training data',
@@ -130,8 +131,7 @@ function initPcaPlot(pca_x, pca_y, line_pc1, line_y) {
 
 function updatePcaPoints(pca_x, pca_y, retrained) {
   if (retrained) {
-    // On retrain, promote all incoming points plus current tick to "training data"
-    // and reset incoming trace to show post-retrain production drift clearly.
+    // On retrain, promote incoming points + current tick into training set.
     pcaTrainingX = pcaTrainingX.concat(pcaIncomingX, pca_x);
     pcaTrainingY = pcaTrainingY.concat(pcaIncomingY, pca_y);
     pcaIncomingX = [];
@@ -140,6 +140,7 @@ function updatePcaPoints(pca_x, pca_y, retrained) {
     Plotly.restyle('plot-pca', { x: [[]], y: [[]] }, [1]);
     return;
   }
+
   pcaIncomingX = pcaIncomingX.concat(pca_x);
   pcaIncomingY = pcaIncomingY.concat(pca_y);
   Plotly.extendTraces('plot-pca', { x: [pca_x], y: [pca_y] }, [1]);
@@ -222,12 +223,7 @@ function updateDriftHistory(periodLabel, ksVal, psiVal, retrained) {
   driftLabels.push(periodLabel);
   ksHistory.push(ksVal);
   psiHistory.push(psiVal);
-
-  if (retrained) {
-    retrainPeaks.push(Math.max(ksVal, psiVal));
-  } else {
-    retrainPeaks.push(null);
-  }
+  retrainPeaks.push(retrained ? Math.max(ksVal, psiVal) : null);
 
   Plotly.restyle('plot-drift', { x: [driftLabels], y: [ksHistory] }, [0]);
   Plotly.restyle('plot-drift', { x: [driftLabels], y: [psiHistory] }, [1]);
@@ -292,15 +288,18 @@ function flashDrift(id) {
 
 function renderAgentStatus(s) {
   if (!agentStatusEl || !s) return;
+
   latestAgentReportUrl = s.report_available && s.report_url ? `${API}${s.report_url}` : null;
   if (btnAgentReport) {
     btnAgentReport.disabled = !latestAgentReportUrl;
     btnAgentReport.title = latestAgentReportUrl ? 'Open latest drift report' : 'No report generated yet';
   }
+
   if (agentBadge) {
     agentBadge.className = 'pill';
     agentBadge.textContent = (s.status || 'idle').toUpperCase();
   }
+
   if (!s.available) {
     agentStatusEl.textContent = 'Agent: unavailable';
     btnAgentRun.disabled = true;
@@ -392,8 +391,8 @@ btnInit.addEventListener('click', async () => {
     feature_x:    document.getElementById('cfg-feature-x').value,
     feature_y:    'forecast_intensity',
     ks_threshold: KS_THRESHOLD,
-    n_init:       parseInt(document.getElementById('cfg-n-init').value),
-    n_monthly:    parseInt(document.getElementById('cfg-n-monthly').value),
+    n_init:       parseInt(document.getElementById('cfg-n-init').value, 10),
+    n_monthly:    parseInt(document.getElementById('cfg-n-monthly').value, 10),
     speed:        parseFloat(document.getElementById('cfg-speed').value),
   };
 
@@ -473,7 +472,9 @@ btnSim.addEventListener('click', () => {
     if (d.done && !d.month) {
       addLog('Simulation complete.', 'done');
       updateHeader('—', '—', '—', 'DONE');
-      evtSource.close(); btnPause.disabled = true; return;
+      evtSource.close();
+      btnPause.disabled = true;
+      return;
     }
 
     updateHeader(d.month, d.month_idx + 1, d.total_months, 'RUNNING');
@@ -492,13 +493,13 @@ btnSim.addEventListener('click', () => {
     if (kdeFeature === feat) updateKdePlot(kdeFeature);
 
     updateDriftHistory(d.month, d.ks_stat, d.psi, d.retrained);
+
     if (d.drift_pills) updatePills(d.drift_pills);
     updateDash(d);
 
     if (d.drift_detected) {
       flashDrift('panel-pca');
       flashDrift('panel-kde');
-      flashDrift('panel-pred');
       document.getElementById('pill-drift').className   = 'pill drifting';
       document.getElementById('pill-drift').textContent = `DRIFT: ${d.ks_stat}`;
     } else {
@@ -512,13 +513,15 @@ btnSim.addEventListener('click', () => {
     if (d.done) {
       addLog('All months processed — simulation complete.', 'done');
       updateHeader(d.month, d.total_months, d.total_months, 'DONE');
-      evtSource.close(); btnPause.disabled = true;
+      evtSource.close();
+      btnPause.disabled = true;
     }
   };
 
   evtSource.onerror = () => {
     addLog('SSE connection lost.', 'drift');
-    evtSource.close(); btnPause.disabled = true;
+    evtSource.close();
+    btnPause.disabled = true;
     updateHeader('—', '—', '—', 'ERROR');
   };
 });
@@ -545,10 +548,20 @@ btnReset.addEventListener('click', async () => {
   if (evtSource) { evtSource.close(); evtSource = null; }
   await fetch(`${API}/api/reset`, { method: 'POST' });
 
-  initialized = false; simRunning = false; logCount = 0;
-  driftLabels = []; ksHistory = []; psiHistory = []; retrainPeaks = []; kdeStore = {};
-  pcaTrainingX = []; pcaTrainingY = []; pcaIncomingX = []; pcaIncomingY = [];
-  PC1_RANGE = null; INTENSITY_RANGE = null;
+  initialized = false;
+  simRunning = false;
+  logCount = 0;
+  driftLabels = [];
+  ksHistory = [];
+  psiHistory = [];
+  retrainPeaks = [];
+  kdeStore = {};
+  pcaTrainingX = [];
+  pcaTrainingY = [];
+  pcaIncomingX = [];
+  pcaIncomingY = [];
+  PC1_RANGE = null;
+  INTENSITY_RANGE = null;
 
   ['plot-pca', 'plot-kde', 'plot-drift'].forEach(id => Plotly.purge(id));
 
@@ -560,7 +573,7 @@ btnReset.addEventListener('click', async () => {
   document.getElementById('pill-drift').className   = 'pill';
   document.getElementById('pill-drift').textContent = 'DRIFT: —';
   document.getElementById('version-badge').textContent = 'v —';
-  ['m-r2','m-rmse','m-ks','m-psi','m-retrain','m-version'].forEach(id => {
+  ['m-r2', 'm-rmse', 'm-ks', 'm-psi', 'm-retrain', 'm-version'].forEach(id => {
     document.getElementById(id).textContent = '—';
   });
 
