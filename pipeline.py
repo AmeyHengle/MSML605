@@ -107,6 +107,8 @@ class PipelineState:
         self.speed        = config.get('speed',         1.0)
         self.models_dir   = config.get('models_dir',   'models')
         self.data_path    = config.get('data_path',    'data/historical_data.csv')
+        self.baseline_years = int(config.get('baseline_years', 4))
+        self.retrain_cooldown_days = int(config.get('retrain_cooldown_days', 14))
 
         df = pd.read_csv(self.data_path)
         if 'timestamp' in df.columns:
@@ -115,9 +117,31 @@ class PipelineState:
         df = add_time_features(df)
         df = ensure_feature_columns(df, ENERGY_FEATURES + [self.feature_y])
         df = df.drop(columns=[c for c in df.columns if c.startswith('factor_')], errors='ignore')
-        df['period'] = df['timestamp'].dt.to_period('M')
-        self.df      = df
-        self.months  = sorted(df['period'].unique())
+        df = df.sort_values('timestamp').reset_index(drop=True)
+        self.df = df
+
+        # Build a long baseline window (first N years) to initialize a stable model.
+        start_ts = df['timestamp'].min()
+        baseline_cutoff = start_ts + pd.DateOffset(years=self.baseline_years)
+        baseline_df = df[df['timestamp'] < baseline_cutoff].copy()
+        sim_df = df[df['timestamp'] >= baseline_cutoff].copy()
+
+        # Fallback for short datasets: first 70% as baseline, remaining 30% for simulation.
+        if len(baseline_df) < 10 or len(sim_df) < 2:
+            split_idx = max(1, int(len(df) * 0.7))
+            baseline_df = df.iloc[:split_idx].copy()
+            sim_df = df.iloc[split_idx:].copy()
+
+        # Final fallback: if still no simulation slice, reserve last row for simulation.
+        if len(sim_df) == 0 and len(df) > 1:
+            baseline_df = df.iloc[:-1].copy()
+            sim_df = df.iloc[-1:].copy()
+
+        baseline_df['day'] = baseline_df['timestamp'].dt.floor('D')
+        sim_df['day'] = sim_df['timestamp'].dt.floor('D')
+        self.baseline_df = baseline_df
+        self.sim_df = sim_df
+        self.days = sorted(sim_df['day'].unique())
 
         # Fit scaler + PCA once on entire dataset — never refit during simulation
         full = df[ENERGY_FEATURES + [self.feature_y]].dropna()
@@ -149,12 +173,22 @@ class PipelineState:
         self.model         = None
         self.model_version = 0
         self.model_log     = []
-        self.current_month = 0
+        self.current_day = 0
+        self.last_retrain_day = None
 
-    def _month_clean(self, idx: int):
-        period = self.months[idx]
-        rows   = self.df[self.df['period'] == period]
+    @staticmethod
+    def _fmt_day(day_val) -> str:
+        return pd.Timestamp(day_val).strftime('%Y-%m-%d')
+
+    def _day_clean(self, idx: int):
+        day_val = self.days[idx]
+        rows = self.sim_df[self.sim_df['day'] == day_val]
         clean  = rows[ENERGY_FEATURES + [self.feature_y]].dropna()
+        return clean[ENERGY_FEATURES].values, clean[self.feature_y].values, rows
+
+    def _baseline_clean(self):
+        rows = self.baseline_df
+        clean = rows[ENERGY_FEATURES + [self.feature_y]].dropna()
         return clean[ENERGY_FEATURES].values, clean[self.feature_y].values, rows
 
     def _project(self, X: np.ndarray) -> np.ndarray:
@@ -176,12 +210,14 @@ class PipelineState:
         }
 
     def initialize(self) -> dict:
-        X_m, y_m, rows = self._month_clean(0)
+        X_m, y_m, rows = self._baseline_clean()
 
         self.model         = train_lr(X_m, y_m)
         self.model_version = 1
+        baseline_end = rows['timestamp'].max() if len(rows) else self.df['timestamp'].max()
+        baseline_end_s = pd.Timestamp(baseline_end).strftime('%Y-%m-%d')
         path = save_model(self.model, self.model_version,
-                          str(self.months[0]), self.models_dir)
+                          baseline_end_s, self.models_dir)
 
         r2, rmse, y_pred = self._eval(X_m, y_m)
         line_pc1, line_y = pca_line_data(self.pca, self.scaler,
@@ -197,13 +233,17 @@ class PipelineState:
         for feat in ENERGY_FEATURES:
             self.exp_map[feat].extend(rows[feat].dropna().values.tolist())
 
-        self.model_log.append({'version': 1, 'period': str(self.months[0]),
+        self.model_log.append({'version': 1, 'period': baseline_end_s,
                                'r2': r2, 'rmse': rmse})
-        self.current_month = 1
+        self.current_day = 0
+
+        first_day = self._fmt_day(self.days[0]) if self.days else baseline_end_s
+        days_list = [self._fmt_day(d) for d in self.days]
 
         return {
-            'month':           str(self.months[0]),
-            'total_months':    len(self.months),
+            # Keep legacy key names for frontend compatibility; values are daily.
+            'month':           first_day,
+            'total_months':    len(self.days),
             'model_version':   int(self.model_version),
             'r2':              round(r2, 4),
             'rmse':            round(rmse, 2),
@@ -222,21 +262,27 @@ class PipelineState:
             'kde_ref_y':       kde_y,
             'pc1_range':       self.pc1_range,
             'intensity_range': self.intensity_range,
-            'months_list':     [str(m) for m in self.months],
+            'months_list':     days_list,
         }
 
     def tick(self) -> Optional[dict]:
-        i = self.current_month
-        if i >= len(self.months):
+        i = self.current_day
+        if i >= len(self.days):
             return None
 
-        period          = self.months[i]
-        X_m, y_m, rows = self._month_clean(i)
+        day_val = self.days[i]
+        period = self._fmt_day(day_val)
+        X_m, y_m, rows = self._day_clean(i)
 
-        cur_gas    = rows[self.feature_x].dropna().values
-        ks_stat, _ = stats.ks_2samp(self.exp_gas, cur_gas)
-        drifted    = bool(ks_stat >= self.ks_threshold)
-        psi_val    = compute_psi(np.array(self.exp_gas), cur_gas)
+        cur_gas = rows[self.feature_x].dropna().values
+        if len(self.exp_gas) >= 5 and len(cur_gas) >= 5:
+            ks_stat, _ = stats.ks_2samp(self.exp_gas, cur_gas)
+            psi_val = compute_psi(np.array(self.exp_gas), cur_gas)
+            drifted = bool(ks_stat >= self.ks_threshold)
+        else:
+            ks_stat = 0.0
+            psi_val = 0.0
+            drifted = False
 
         cur_map = {f: rows[f].dropna().values for f in ENERGY_FEATURES}
         pills   = drift_pills(self.exp_map, cur_map, self.ks_threshold)
@@ -256,15 +302,21 @@ class PipelineState:
         new_line   = None
 
         if drifted:
-            self.model         = train_lr(np.array(self.exp_X),
-                                          np.array(self.exp_y))
-            self.model_version += 1
-            checkpoint = save_model(self.model, self.model_version,
-                                    str(period), self.models_dir)
-            lx, ly   = pca_line_data(self.pca, self.scaler,
-                                      self.model, self.pc1_range)
-            new_line  = {'line_pc1': lx, 'line_y': ly}
-            retrained = True
+            can_retrain = True
+            if self.last_retrain_day is not None:
+                delta_days = (pd.Timestamp(day_val) - pd.Timestamp(self.last_retrain_day)).days
+                can_retrain = delta_days >= self.retrain_cooldown_days
+
+            if can_retrain:
+                self.model = train_lr(np.array(self.exp_X), np.array(self.exp_y))
+                self.model_version += 1
+                checkpoint = save_model(self.model, self.model_version,
+                                        str(period), self.models_dir)
+                lx, ly = pca_line_data(self.pca, self.scaler,
+                                       self.model, self.pc1_range)
+                new_line = {'line_pc1': lx, 'line_y': ly}
+                retrained = True
+                self.last_retrain_day = day_val
 
         r2, rmse, y_pred = self._eval(X_m, y_m)
         pts = self._plot_sample(X_m, y_m, y_pred, self.n_monthly)
@@ -273,16 +325,20 @@ class PipelineState:
             log = (f"⚠ Drift  KS={ks_stat:.4f} ≥ {self.ks_threshold}"
                    f"  →  Retrained v{self.model_version}"
                    f"  |  R²={r2:.4f}  RMSE={rmse:.2f}")
+        elif drifted:
+            log = (f"⚠ Drift  KS={ks_stat:.4f} ≥ {self.ks_threshold}"
+                   f"  |  Retrain cooldown active ({self.retrain_cooldown_days}d)"
+                   f"  |  R²={r2:.4f}  RMSE={rmse:.2f}")
         else:
             log = (f"✓  No drift  KS={ks_stat:.4f}"
                    f"  |  R²={r2:.4f}  RMSE={rmse:.2f}")
 
-        self.current_month += 1
+        self.current_day += 1
 
         return {
             'month':          str(period),
             'month_idx':      int(i),
-            'total_months':   int(len(self.months)),
+            'total_months':   int(len(self.days)),
             'ks_stat':        round(float(ks_stat), 4),
             'psi':            round(float(psi_val), 4),
             'drift_detected': bool(drifted),
@@ -302,5 +358,5 @@ class PipelineState:
             'drift_pills':    pills,
             'checkpoint':     checkpoint,
             'log':            log,
-            'done':           bool(self.current_month >= len(self.months)),
+            'done':           bool(self.current_day >= len(self.days)),
         }
