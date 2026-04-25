@@ -10,9 +10,15 @@ let simRunning  = false;
 let logCount    = 0;
 
 let kdeStore   = {};
-let kdeFeature = 'gas';
-let ksHistory  = [];
-let ksMonths   = [];
+let kdeFeature = 'coal';
+let driftLabels = [];
+let ksHistory   = [];
+let psiHistory  = [];
+let retrainPeaks = [];
+let pcaTrainingX = [];
+let pcaTrainingY = [];
+let pcaIncomingX = [];
+let pcaIncomingY = [];
 
 let PC1_RANGE       = null;
 let INTENSITY_RANGE = null;
@@ -70,7 +76,7 @@ function reapplyPlotlyTheme() {
     'xaxis.gridcolor': t.grid, 'xaxis.color': t.text,
     'yaxis.gridcolor': t.grid, 'yaxis.color': t.text,
   };
-  ['plot-pca', 'plot-pred', 'plot-kde', 'plot-ks'].forEach(id => {
+  ['plot-pca', 'plot-kde', 'plot-drift'].forEach(id => {
     try { Plotly.relayout(id, u); } catch (_) {}
   });
 }
@@ -98,10 +104,19 @@ const CFG = { displayModeBar: false, responsive: true };
 
 // ── PCA scatter ───────────────────────────────────────────────────────────────
 function initPcaPlot(pca_x, pca_y, line_pc1, line_y) {
+  pcaTrainingX = [...pca_x];
+  pcaTrainingY = [...pca_y];
+  pcaIncomingX = [];
+  pcaIncomingY = [];
   Plotly.newPlot('plot-pca', [
     {
-      x: pca_x, y: pca_y, mode: 'markers', type: 'scatter', name: 'Samples',
+      x: pca_x, y: pca_y, mode: 'markers', type: 'scatter', name: 'Model training data',
       marker: { color: '#4C72B0', size: 5, opacity: 0.75,
+                line: { color: '#fff', width: 0.4 } },
+    },
+    {
+      x: [], y: [], mode: 'markers', type: 'scatter', name: 'New incoming data',
+      marker: { color: '#f5a623', size: 5, opacity: 0.82,
                 line: { color: '#fff', width: 0.4 } },
     },
     {
@@ -113,34 +128,25 @@ function initPcaPlot(pca_x, pca_y, line_pc1, line_y) {
   CFG);
 }
 
-function updatePcaPoints(pca_x, pca_y) {
-  Plotly.extendTraces('plot-pca', { x: [pca_x], y: [pca_y] }, [0]);
+function updatePcaPoints(pca_x, pca_y, retrained) {
+  if (retrained) {
+    // On retrain, promote all incoming points plus current tick to "training data"
+    // and reset incoming trace to show post-retrain production drift clearly.
+    pcaTrainingX = pcaTrainingX.concat(pcaIncomingX, pca_x);
+    pcaTrainingY = pcaTrainingY.concat(pcaIncomingY, pca_y);
+    pcaIncomingX = [];
+    pcaIncomingY = [];
+    Plotly.restyle('plot-pca', { x: [pcaTrainingX], y: [pcaTrainingY] }, [0]);
+    Plotly.restyle('plot-pca', { x: [[]], y: [[]] }, [1]);
+    return;
+  }
+  pcaIncomingX = pcaIncomingX.concat(pca_x);
+  pcaIncomingY = pcaIncomingY.concat(pca_y);
+  Plotly.extendTraces('plot-pca', { x: [pca_x], y: [pca_y] }, [1]);
 }
 
 function updatePcaLine(line_pc1, line_y) {
-  Plotly.restyle('plot-pca', { x: [line_pc1], y: [line_y] }, [1]);
-}
-
-// ── Predicted vs Actual ───────────────────────────────────────────────────────
-function initPredPlot(pred_x, actual_y) {
-  const lo = INTENSITY_RANGE[0], hi = INTENSITY_RANGE[1];
-  Plotly.newPlot('plot-pred', [
-    {
-      x: pred_x, y: actual_y, mode: 'markers', type: 'scatter', name: 'Samples',
-      marker: { color: '#5b8fff', size: 5, opacity: 0.75,
-                line: { color: '#fff', width: 0.4 } },
-    },
-    {
-      x: [lo, hi], y: [lo, hi], mode: 'lines', type: 'scatter',
-      name: 'Ideal (y = x)', line: { color: '#3ecf8e', width: 1.8, dash: 'dot' },
-    },
-  ],
-  makeLayout('Predicted (gCO₂/kWh)', 'Actual (gCO₂/kWh)', INTENSITY_RANGE, INTENSITY_RANGE),
-  CFG);
-}
-
-function updatePredPoints(pred_x, actual_y) {
-  Plotly.extendTraces('plot-pred', { x: [pred_x], y: [actual_y] }, [0]);
+  Plotly.restyle('plot-pca', { x: [line_pc1], y: [line_y] }, [2]);
 }
 
 // ── KDE plot ──────────────────────────────────────────────────────────────────
@@ -172,17 +178,34 @@ document.getElementById('kde-feature-select').addEventListener('change', e => {
   updateKdePlot(kdeFeature);
 });
 
-// ── KS sparkline ──────────────────────────────────────────────────────────────
-function initKsPlot() {
+// ── Drift metrics history (KS + PSI) ─────────────────────────────────────────
+function initDriftPlot() {
   const t = plotlyTheme();
-  Plotly.newPlot('plot-ks', [
+  Plotly.newPlot('plot-drift', [
     {
       x: [], y: [], mode: 'lines+markers', type: 'scatter',
+      name: 'KS',
       line: { color: '#5b8fff', width: 1.5 }, marker: { size: 4, color: '#5b8fff' },
     },
     {
-      x: [], y: [KS_THRESHOLD, KS_THRESHOLD], mode: 'lines', type: 'scatter',
+      x: [], y: [], mode: 'lines+markers', type: 'scatter',
+      name: 'PSI',
+      line: { color: '#f5a623', width: 1.5 }, marker: { size: 4, color: '#f5a623' },
+    },
+    {
+      x: [], y: [], mode: 'markers', type: 'scatter',
+      name: 'Retrain trigger',
+      marker: { size: 8, color: '#e05252', symbol: 'diamond' },
+    },
+    {
+      x: [], y: [], mode: 'lines', type: 'scatter',
+      name: 'KS threshold',
       line: { color: '#e05252', width: 1, dash: 'dot' },
+    },
+    {
+      x: [], y: [], mode: 'lines', type: 'scatter',
+      name: 'PSI threshold',
+      line: { color: '#ba7517', width: 1, dash: 'dot' },
     },
   ], {
     paper_bgcolor: t.paper, plot_bgcolor: t.plot,
@@ -190,18 +213,33 @@ function initKsPlot() {
     xaxis: { gridcolor: t.grid, zeroline: false, color: t.text },
     yaxis: { gridcolor: t.grid, zeroline: false, color: t.text },
     margin: { l: 36, r: 8, t: 6, b: 28 },
-    showlegend: false,
+    showlegend: true,
+    legend: { bgcolor: 'rgba(0,0,0,0)', font: { size: 8 }, x: 0, y: 1 },
   }, CFG);
 }
 
-function updateKsSpark(month, ksVal) {
-  ksMonths.push(month);
+function updateDriftHistory(periodLabel, ksVal, psiVal, retrained) {
+  driftLabels.push(periodLabel);
   ksHistory.push(ksVal);
-  Plotly.restyle('plot-ks', { x: [ksMonths], y: [ksHistory] }, [0]);
-  Plotly.restyle('plot-ks', {
-    x: [[ksMonths[0], ksMonths[ksMonths.length - 1]]],
-    y: [[KS_THRESHOLD, KS_THRESHOLD]],
-  }, [1]);
+  psiHistory.push(psiVal);
+
+  if (retrained) {
+    retrainPeaks.push(Math.max(ksVal, psiVal));
+  } else {
+    retrainPeaks.push(null);
+  }
+
+  Plotly.restyle('plot-drift', { x: [driftLabels], y: [ksHistory] }, [0]);
+  Plotly.restyle('plot-drift', { x: [driftLabels], y: [psiHistory] }, [1]);
+  Plotly.restyle('plot-drift', { x: [driftLabels], y: [retrainPeaks] }, [2]);
+  Plotly.restyle('plot-drift', {
+    x: [driftLabels],
+    y: [driftLabels.map(() => KS_THRESHOLD)],
+  }, [3]);
+  Plotly.restyle('plot-drift', {
+    x: [driftLabels],
+    y: [driftLabels.map(() => 0.25)],
+  }, [4]);
 }
 
 // ── Drift pills ───────────────────────────────────────────────────────────────
@@ -386,9 +424,8 @@ btnInit.addEventListener('click', async () => {
     INTENSITY_RANGE = d.intensity_range;
 
     initPcaPlot(d.pca_x, d.pca_y, d.line_pc1, d.line_y);
-    initPredPlot(d.pred_x, d.actual_y);
     initKdePlot();
-    initKsPlot();
+    initDriftPlot();
 
     kdeStore[config.feature_x] = {
       ref_x: d.kde_x, ref_y: d.kde_ref_y,
@@ -441,8 +478,7 @@ btnSim.addEventListener('click', () => {
 
     updateHeader(d.month, d.month_idx + 1, d.total_months, 'RUNNING');
 
-    updatePcaPoints(d.pca_x, d.pca_y);
-    updatePredPoints(d.pred_x, d.actual_y);
+    updatePcaPoints(d.pca_x, d.pca_y, d.retrained);
 
     if (d.retrained && d.new_line) {
       updatePcaLine(d.new_line.line_pc1, d.new_line.line_y);
@@ -455,7 +491,7 @@ btnSim.addEventListener('click', () => {
     };
     if (kdeFeature === feat) updateKdePlot(kdeFeature);
 
-    updateKsSpark(d.month, d.ks_stat);
+    updateDriftHistory(d.month, d.ks_stat, d.psi, d.retrained);
     if (d.drift_pills) updatePills(d.drift_pills);
     updateDash(d);
 
@@ -510,10 +546,11 @@ btnReset.addEventListener('click', async () => {
   await fetch(`${API}/api/reset`, { method: 'POST' });
 
   initialized = false; simRunning = false; logCount = 0;
-  ksHistory = []; ksMonths = []; kdeStore = {};
+  driftLabels = []; ksHistory = []; psiHistory = []; retrainPeaks = []; kdeStore = {};
+  pcaTrainingX = []; pcaTrainingY = []; pcaIncomingX = []; pcaIncomingY = [];
   PC1_RANGE = null; INTENSITY_RANGE = null;
 
-  ['plot-pca', 'plot-pred', 'plot-kde', 'plot-ks'].forEach(id => Plotly.purge(id));
+  ['plot-pca', 'plot-kde', 'plot-drift'].forEach(id => Plotly.purge(id));
 
   document.getElementById('log-body').innerHTML =
     '<div class="log-entry log-entry--idle">Awaiting initialization…</div>';
