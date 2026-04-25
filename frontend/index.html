@@ -78,6 +78,8 @@
     <button class="btn btn-run"      id="btn-simulate" disabled>▶ Simulate</button>
     <button class="btn btn-pause"    id="btn-pause"    disabled>⏸ Pause</button>
     <button class="btn btn-reset"    id="btn-reset"    disabled>↺ Reset</button>
+    <button class="btn btn-run"      id="btn-agent-run">⚙ Run Agent</button>
+    <span id="agent-status" style="font-size:11px;color:var(--text-dim);min-width:150px;">Agent: idle</span>
   </div>
 </section>
 
@@ -186,6 +188,20 @@
       </div>
       <div class="log-body" id="log-body">
         <div class="log-entry log-entry--idle">Awaiting initialization…</div>
+      </div>
+    </div>
+
+    <div class="panel panel--log">
+      <div class="panel-header">
+        <span class="panel-title">AGENT LOGS</span>
+        <div style="display:flex;gap:6px;align-items:center;">
+          <span id="agent-badge" class="pill" style="padding:2px 8px;letter-spacing:.05em;">IDLE</span>
+          <button class="btn btn-reset" id="btn-agent-toggle" style="padding:4px 8px;font-size:10px;">Hide</button>
+          <button class="btn btn-reset" id="btn-agent-refresh" style="padding:4px 8px;font-size:10px;">Refresh</button>
+        </div>
+      </div>
+      <div class="log-body" id="agent-log-body" style="max-height:170px;">
+        <div class="log-entry log-entry--idle">No agent logs yet.</div>
       </div>
     </div>
 

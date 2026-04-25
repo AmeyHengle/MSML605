@@ -23,10 +23,20 @@ const btnInit     = document.getElementById('btn-init');
 const btnSim      = document.getElementById('btn-simulate');
 const btnPause    = document.getElementById('btn-pause');
 const btnReset    = document.getElementById('btn-reset');
+const btnAgentRun = document.getElementById('btn-agent-run');
+const btnAgentToggle = document.getElementById('btn-agent-toggle');
+const btnAgentRefresh = document.getElementById('btn-agent-refresh');
 const cfgSpeed    = document.getElementById('cfg-speed');
 const cfgSpeedVal = document.getElementById('cfg-speed-val');
 const themeToggle = document.getElementById('theme-toggle');
 const themeIcon   = document.getElementById('theme-icon');
+const agentStatusEl = document.getElementById('agent-status');
+const agentBadge = document.getElementById('agent-badge');
+const agentLogBody = document.getElementById('agent-log-body');
+
+let agentPollTimer = null;
+let agentLogsVisible = true;
+let lastAgentLogCount = 0;
 
 cfgSpeed.addEventListener('input', () => {
   cfgSpeedVal.textContent = parseFloat(cfgSpeed.value).toFixed(1) + 's';
@@ -240,6 +250,91 @@ function flashDrift(id) {
   setTimeout(() => el.classList.remove('drift-flash'), 2200);
 }
 
+function renderAgentStatus(s) {
+  if (!agentStatusEl || !s) return;
+  if (agentBadge) {
+    agentBadge.className = 'pill';
+    agentBadge.textContent = (s.status || 'idle').toUpperCase();
+  }
+  if (!s.available) {
+    agentStatusEl.textContent = 'Agent: unavailable';
+    btnAgentRun.disabled = true;
+    if (agentBadge) {
+      agentBadge.className = 'pill';
+      agentBadge.textContent = 'UNAVAILABLE';
+    }
+    return;
+  }
+
+  if (s.running) {
+    agentStatusEl.textContent = `Agent: running (${s.job_id?.slice(0, 8) || 'n/a'})`;
+    btnAgentRun.disabled = true;
+    if (agentBadge) {
+      agentBadge.className = 'pill drifting';
+      agentBadge.textContent = 'RUNNING';
+    }
+    return;
+  }
+
+  btnAgentRun.disabled = false;
+  if (s.status === 'succeeded') {
+    agentStatusEl.textContent = `Agent: succeeded (exit ${s.exit_code})`;
+    if (agentBadge) {
+      agentBadge.className = 'pill ok';
+      agentBadge.textContent = 'SUCCEEDED';
+    }
+  } else if (s.status === 'failed') {
+    agentStatusEl.textContent = `Agent: failed (${s.error || 'check logs'})`;
+    if (agentBadge) {
+      agentBadge.className = 'pill drifting';
+      agentBadge.textContent = 'FAILED';
+    }
+  } else {
+    agentStatusEl.textContent = 'Agent: idle';
+    if (agentBadge) {
+      agentBadge.className = 'pill';
+      agentBadge.textContent = 'IDLE';
+    }
+  }
+}
+
+async function fetchAgentStatus() {
+  try {
+    const res = await fetch(`${API}/api/agent/status`);
+    if (!res.ok) return;
+    const status = await res.json();
+    renderAgentStatus(status);
+    if (status.running || status.log_lines !== lastAgentLogCount) {
+      fetchAgentLogs();
+    }
+  } catch (_) {}
+}
+
+function renderAgentLogs(payload) {
+  if (!agentLogBody || !payload) return;
+  const logs = payload.logs || [];
+  lastAgentLogCount = logs.length;
+
+  if (logs.length === 0) {
+    agentLogBody.innerHTML = '<div class="log-entry log-entry--idle">No agent logs yet.</div>';
+    return;
+  }
+
+  agentLogBody.innerHTML = logs.map(line =>
+    `<div class="log-entry log-entry--ok">${line.replaceAll('<', '&lt;').replaceAll('>', '&gt;')}</div>`
+  ).join('');
+  agentLogBody.scrollTop = agentLogBody.scrollHeight;
+}
+
+async function fetchAgentLogs() {
+  try {
+    const res = await fetch(`${API}/api/agent/logs`);
+    if (!res.ok) return;
+    const payload = await res.json();
+    renderAgentLogs(payload);
+  } catch (_) {}
+}
+
 // ── INITIALIZE ────────────────────────────────────────────────────────────────
 btnInit.addEventListener('click', async () => {
   btnInit.disabled = true;
@@ -435,3 +530,36 @@ btnReset.addEventListener('click', async () => {
   btnPause.textContent = '⏸ Pause';
   addLog('Pipeline reset.', 'idle');
 });
+
+btnAgentRun.addEventListener('click', async () => {
+  btnAgentRun.disabled = true;
+  try {
+    const res = await fetch(`${API}/api/agent/run`, { method: 'POST' });
+    const out = await res.json();
+    if (out.status === 'started') {
+      addLog(`Agent run started (${out.job_id.slice(0, 8)})`, 'ok');
+    } else if (out.status === 'already_running') {
+      addLog(`Agent already running (${out.job_id.slice(0, 8)})`, 'idle');
+    } else {
+      addLog('Agent run request sent.', 'idle');
+    }
+  } catch (err) {
+    addLog(`Agent run failed: ${err.message}`, 'drift');
+  } finally {
+    fetchAgentStatus();
+  }
+});
+
+btnAgentToggle.addEventListener('click', () => {
+  agentLogsVisible = !agentLogsVisible;
+  agentLogBody.style.display = agentLogsVisible ? 'block' : 'none';
+  btnAgentToggle.textContent = agentLogsVisible ? 'Hide' : 'Show';
+});
+
+btnAgentRefresh.addEventListener('click', () => {
+  fetchAgentLogs();
+});
+
+fetchAgentStatus();
+fetchAgentLogs();
+agentPollTimer = setInterval(fetchAgentStatus, 3000);

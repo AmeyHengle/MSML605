@@ -2,6 +2,13 @@
 import asyncio
 import json
 import numpy as np
+import subprocess
+import sys
+import threading
+import uuid
+from collections import deque
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Optional, List
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -27,6 +34,72 @@ app.add_middleware(
 # ── Shared state ──────────────────────────────────────────────────────────────
 _state: Optional[PipelineState] = None
 _simulation_running: bool = False
+_agent_lock = threading.Lock()
+_agent_job = {
+    'available': (Path(__file__).resolve().parent / 'run_batch_pipeline.py').exists(),
+    'running': False,
+    'job_id': None,
+    'status': 'idle',
+    'started_at': None,
+    'ended_at': None,
+    'exit_code': None,
+    'error': None,
+    'logs': deque(maxlen=200),
+}
+
+
+def _utc_now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _agent_status_payload() -> dict:
+    return {
+        'available': _agent_job['available'],
+        'running': _agent_job['running'],
+        'job_id': _agent_job['job_id'],
+        'status': _agent_job['status'],
+        'started_at': _agent_job['started_at'],
+        'ended_at': _agent_job['ended_at'],
+        'exit_code': _agent_job['exit_code'],
+        'error': _agent_job['error'],
+        'log_lines': len(_agent_job['logs']),
+    }
+
+
+def _run_agent_job(job_id: str) -> None:
+    script_path = Path(__file__).resolve().parent / 'run_batch_pipeline.py'
+    cmd = [sys.executable, '-u', str(script_path)]
+    proc = None
+    try:
+        proc = subprocess.Popen(
+            cmd,
+            cwd=str(script_path.parent),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+        )
+        if proc.stdout is not None:
+            for line in proc.stdout:
+                with _agent_lock:
+                    _agent_job['logs'].append(line.rstrip())
+        exit_code = proc.wait()
+        with _agent_lock:
+            _agent_job['running'] = False
+            _agent_job['status'] = 'succeeded' if exit_code == 0 else 'failed'
+            _agent_job['exit_code'] = exit_code
+            _agent_job['ended_at'] = _utc_now_iso()
+            if exit_code != 0 and not _agent_job['error']:
+                _agent_job['error'] = f'Agent job exited with code {exit_code}'
+    except Exception as exc:  # noqa: BLE001
+        with _agent_lock:
+            _agent_job['running'] = False
+            _agent_job['status'] = 'failed'
+            _agent_job['ended_at'] = _utc_now_iso()
+            _agent_job['error'] = str(exc)
+    finally:
+        if proc is not None and proc.stdout is not None:
+            proc.stdout.close()
 
 
 class NumpyEncoder(json.JSONEncoder):
@@ -158,6 +231,47 @@ async def predict(req: PredictRequest):
     X = np.array(req.features).reshape(1, -1)
     pred = float(_state.model.predict(X)[0])
     return {'forecast_intensity': round(pred, 2)}
+
+
+# ── Agent routes (background batch pipeline runner) ───────────────────────────
+@app.get('/api/agent/status')
+async def agent_status():
+    with _agent_lock:
+        return _agent_status_payload()
+
+
+@app.get('/api/agent/logs')
+async def agent_logs():
+    with _agent_lock:
+        return {
+            'job_id': _agent_job['job_id'],
+            'running': _agent_job['running'],
+            'logs': list(_agent_job['logs']),
+        }
+
+
+@app.post('/api/agent/run')
+async def agent_run():
+    with _agent_lock:
+        if not _agent_job['available']:
+            raise HTTPException(status_code=503, detail='run_batch_pipeline.py not available on this deployment')
+        if _agent_job['running']:
+            return {'status': 'already_running', 'job_id': _agent_job['job_id']}
+
+        job_id = str(uuid.uuid4())
+        _agent_job['running'] = True
+        _agent_job['job_id'] = job_id
+        _agent_job['status'] = 'running'
+        _agent_job['started_at'] = _utc_now_iso()
+        _agent_job['ended_at'] = None
+        _agent_job['exit_code'] = None
+        _agent_job['error'] = None
+        _agent_job['logs'].clear()
+        _agent_job['logs'].append(f'[{_agent_job["started_at"]}] agent run started')
+
+    t = threading.Thread(target=_run_agent_job, args=(job_id,), daemon=True)
+    t.start()
+    return {'status': 'started', 'job_id': job_id}
 
 
 # ── Monitoring routes (Page 2 — requires AWS CloudWatch) ─────────────────────
