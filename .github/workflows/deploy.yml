@@ -325,6 +325,11 @@ jobs:
           overall_drift = extract(r"\[batch\]\s+overall_drift=(.+)")
           drift_score = extract(r"\[batch\]\s+drift_score\(max_psi\)=(.+)")
           drifted_features = extract(r"\[batch\]\s+drifted_features=(.+)")
+          narrative_json_raw = extract(r"\[batch\]\s+narrative_json=(.+)", "\"Narrative unavailable\"")
+          try:
+              narrative = json.loads(narrative_json_raw)
+          except Exception:
+              narrative = "Narrative unavailable"
           retrain_performed = extract(r"\[batch\]\s+retrain_performed=(.+)", "false").strip().lower()
           if retrain_performed != "true":
               print("No retrain was performed in this run; skipping Slack drift report.")
@@ -356,6 +361,13 @@ jobs:
                               {"type": "mrkdwn", "text": f"*Drifted features*\n{drifted_features}"},
                               {"type": "mrkdwn", "text": f"*HTML report*\n{report_url}"},
                           ],
+                      },
+                      {
+                          "type": "section",
+                          "text": {
+                              "type": "mrkdwn",
+                              "text": f"*Groq narrative*\n{str(narrative)[:900]}",
+                          },
                       },
                       {
                           "type": "actions",

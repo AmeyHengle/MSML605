@@ -1,8 +1,12 @@
 from __future__ import annotations
 
 import html
+import json
+import os
 from pathlib import Path
 import sys
+import urllib.error
+import urllib.request
 
 _ROOT = Path(__file__).resolve().parent
 _SRC = _ROOT / "src"
@@ -23,6 +27,104 @@ from ml605_pipeline.features import (
 )
 
 
+def _fallback_narrative(
+    *,
+    overall_drift: bool,
+    drift_score: float,
+    drifted_features: list[str],
+    rows_fetched: int,
+    retrain_performed: bool,
+) -> str:
+    drift_text = "detected" if overall_drift else "not detected"
+    features_text = ", ".join(drifted_features[:5]) if drifted_features else "none"
+    retrain_text = "triggered" if retrain_performed else "not triggered"
+    return (
+        f"Window processed with {rows_fetched} rows. Drift was {drift_text} "
+        f"(max PSI={drift_score:.4f}); top drifted features: {features_text}. "
+        f"Retrain was {retrain_text}."
+    )
+
+
+def _generate_groq_narrative(
+    *,
+    overall_drift: bool,
+    drift_score: float,
+    drifted_features: list[str],
+    rows_fetched: int,
+    retrain_performed: bool,
+    ks_threshold: float,
+    psi_threshold: float,
+) -> str:
+    api_key = os.getenv("GROQ_API_KEY", "").strip()
+    if not api_key:
+        return _fallback_narrative(
+            overall_drift=overall_drift,
+            drift_score=drift_score,
+            drifted_features=drifted_features,
+            rows_fetched=rows_fetched,
+            retrain_performed=retrain_performed,
+        )
+
+    prompt = {
+        "overall_drift": overall_drift,
+        "drift_score_max_psi": round(drift_score, 6),
+        "drifted_features_top10": drifted_features[:10],
+        "rows_fetched": rows_fetched,
+        "retrain_performed": retrain_performed,
+        "thresholds": {
+            "ks_threshold": ks_threshold,
+            "psi_threshold": psi_threshold,
+        },
+    }
+
+    body = {
+        "model": "llama-3.3-70b-versatile",
+        "temperature": 0.2,
+        "max_tokens": 280,
+        "messages": [
+            {
+                "role": "system",
+                "content": (
+                    "You are an MLOps analyst. Write a concise 2-3 sentence summary "
+                    "for stakeholders covering drift diagnosis, risk, and retrain recommendation."
+                ),
+            },
+            {
+                "role": "user",
+                "content": json.dumps(prompt),
+            },
+        ],
+    }
+
+    req = urllib.request.Request(
+        "https://api.groq.com/openai/v1/chat/completions",
+        data=json.dumps(body).encode("utf-8"),
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            payload = json.loads(resp.read().decode("utf-8"))
+        choices = payload.get("choices") or []
+        if not choices:
+            raise RuntimeError("No choices returned from Groq")
+        msg = (choices[0].get("message") or {}).get("content", "").strip()
+        if not msg:
+            raise RuntimeError("Empty narrative returned from Groq")
+        return msg
+    except (urllib.error.URLError, TimeoutError, RuntimeError, json.JSONDecodeError):
+        return _fallback_narrative(
+            overall_drift=overall_drift,
+            drift_score=drift_score,
+            drifted_features=drifted_features,
+            rows_fetched=rows_fetched,
+            retrain_performed=retrain_performed,
+        )
+
+
 def _build_html_report(
     *,
     window_csv: Path,
@@ -30,6 +132,7 @@ def _build_html_report(
     psi_threshold: float,
     ks_threshold: float,
     gas_decision,
+    narrative: str,
 ) -> str:
     rows = []
     sorted_results = sorted(report.feature_results, key=lambda r: r.psi, reverse=True)
@@ -89,6 +192,8 @@ def _build_html_report(
   </div>
   <div class="meta">Drift score (max PSI): <strong>{report.drift_score:.4f}</strong></div>
   <div class="meta">Drifted features: <strong>{', '.join(report.drifted_features) if report.drifted_features else 'None'}</strong></div>
+  <h3>Narrative Summary</h3>
+  <p>{html.escape(narrative)}</p>
   {gas_html}
   <h3>Per-feature diagnostics</h3>
   <table>
@@ -188,6 +293,16 @@ def main() -> None:
     # as the retrain trigger signal used by CI notifications.
     retrain_performed = bool(report.overall_drift)
     print(f"[batch] retrain_performed={str(retrain_performed).lower()}")
+    narrative = _generate_groq_narrative(
+        overall_drift=report.overall_drift,
+        drift_score=report.drift_score,
+        drifted_features=report.drifted_features,
+        rows_fetched=len(df),
+        retrain_performed=retrain_performed,
+        ks_threshold=cfg.ks_threshold,
+        psi_threshold=cfg.psi_threshold,
+    )
+    print(f"[batch] narrative_json={json.dumps(narrative)}")
 
     cfg.reports_dir.mkdir(parents=True, exist_ok=True)
     report_path = cfg.reports_dir / f"drift_report_{cfg.window_label}.html"
@@ -197,6 +312,7 @@ def main() -> None:
         psi_threshold=cfg.psi_threshold,
         ks_threshold=cfg.ks_threshold,
         gas_decision=gas_decision,
+        narrative=narrative,
     )
     report_path.write_text(report_html, encoding="utf-8")
     print(f"[batch] report_html={report_path.resolve()}")
