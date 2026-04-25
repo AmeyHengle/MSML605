@@ -45,9 +45,9 @@
   <div class="ctrl-group">
     <label>KDE Feature</label>
     <select id="cfg-feature-x">
-      <option value="gas">gas</option>
+      <option value="gas" selected>gas</option>
       <option value="biomass">biomass</option>
-      <option value="coal" selected>coal</option>
+      <option value="coal">coal</option>
       <option value="solar">solar</option>
       <option value="wind">wind</option>
       <option value="nuclear">nuclear</option>
@@ -58,15 +58,15 @@
   </div>
   <div class="ctrl-group">
     <label>KS Threshold</label>
-    <input type="number" id="cfg-threshold" value="0.30" min="0.01" max="0.8" step="0.01">
+    <input type="number" id="cfg-threshold" value="0.10" min="0.01" max="0.5" step="0.01">
   </div>
   <div class="ctrl-group">
     <label>Init samples</label>
-    <input type="number" id="cfg-n-init" value="1000" min="10" max="5000" step="10">
+    <input type="number" id="cfg-n-init" value="50" min="10" max="200" step="5">
   </div>
   <div class="ctrl-group">
     <label>Monthly samples</label>
-    <input type="number" id="cfg-n-monthly" value="1000" min="1" max="5000" step="10">
+    <input type="number" id="cfg-n-monthly" value="5" min="1" max="50" step="1">
   </div>
   <div class="ctrl-group">
     <label>Speed (s / month)</label>
@@ -101,9 +101,9 @@
         <span class="panel-title">DISTRIBUTION SHIFT</span>
         <div class="kde-controls">
           <select id="kde-feature-select">
-            <option value="gas">gas</option>
+            <option value="gas" selected>gas</option>
             <option value="biomass">biomass</option>
-            <option value="coal" selected>coal</option>
+            <option value="coal">coal</option>
             <option value="solar">solar</option>
             <option value="wind">wind</option>
             <option value="nuclear">nuclear</option>
@@ -125,6 +125,14 @@
         <span class="feat-pill none" data-feat="solar">solar</span>
         <span class="feat-pill none" data-feat="wind">wind</span>
       </div>
+    </div>
+
+    <div class="panel" id="panel-pred">
+      <div class="panel-header">
+        <span class="panel-title">PREDICTED VS ACTUAL</span>
+        <span class="panel-sub">points on the diagonal = perfect model</span>
+      </div>
+      <div id="plot-pred" class="plot-area"></div>
     </div>
 
   </div>
@@ -169,8 +177,8 @@
           <div class="metric-hint">active checkpoint</div>
         </div>
       </div>
-      <div class="panel-sub-header">DRIFT METRICS HISTORY (KS + PSI)</div>
-      <div id="plot-drift" class="plot-area plot-area--mini"></div>
+      <div class="panel-sub-header">KS HISTORY</div>
+      <div id="plot-ks" class="plot-area plot-area--mini"></div>
     </div>
 
     <div class="panel panel--log">
