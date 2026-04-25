@@ -41,11 +41,36 @@ def compute_rmse(y_true: np.ndarray, y_pred: np.ndarray) -> float:
     return float(np.sqrt(mean_squared_error(y_true, y_pred)))
 
 def kde_curve(samples: np.ndarray, n_points: int = 200):
-    kde = stats.gaussian_kde(samples, bw_method='silverman')
-    lo  = max(0.0, float(samples.min()) - 1.0)
-    hi  = float(samples.max()) + 1.0
-    x   = np.linspace(lo, hi, n_points)
-    return x.tolist(), kde(x).tolist()
+    samples = np.asarray(samples, dtype=float)
+    # Daily slices can be tiny (or degenerate). gaussian_kde requires >=2 values
+    # with non-zero variance, so return a stable placeholder curve when needed.
+    if samples.size == 0:
+        x = np.linspace(0.0, 1.0, n_points)
+        y = np.zeros(n_points)
+        return x.tolist(), y.tolist()
+    if samples.size < 2 or np.allclose(samples, samples[0]):
+        center = float(samples[0])
+        lo = max(0.0, center - 1.0)
+        hi = center + 1.0
+        x = np.linspace(lo, hi, n_points)
+        y = np.zeros(n_points)
+        y[n_points // 2] = 1.0
+        return x.tolist(), y.tolist()
+
+    try:
+        kde = stats.gaussian_kde(samples, bw_method='silverman')
+        lo  = max(0.0, float(samples.min()) - 1.0)
+        hi  = float(samples.max()) + 1.0
+        x   = np.linspace(lo, hi, n_points)
+        return x.tolist(), kde(x).tolist()
+    except Exception:  # noqa: BLE001
+        center = float(np.mean(samples))
+        lo = max(0.0, center - 1.0)
+        hi = center + 1.0
+        x = np.linspace(lo, hi, n_points)
+        y = np.zeros(n_points)
+        y[n_points // 2] = 1.0
+        return x.tolist(), y.tolist()
 
 def quantile_sample_idx(x: np.ndarray, n: int) -> np.ndarray:
     n  = min(n, len(x))
@@ -109,6 +134,8 @@ class PipelineState:
         self.data_path    = config.get('data_path',    'data/historical_data.csv')
         self.baseline_years = int(config.get('baseline_years', 4))
         self.retrain_cooldown_days = int(config.get('retrain_cooldown_days', 14))
+        # Keep simulations bounded for UI responsiveness and legacy test runtime.
+        self.max_sim_days = int(config.get('max_sim_days', 180))
 
         df = pd.read_csv(self.data_path)
         if 'timestamp' in df.columns:
@@ -141,7 +168,10 @@ class PipelineState:
         sim_df['day'] = sim_df['timestamp'].dt.floor('D')
         self.baseline_df = baseline_df
         self.sim_df = sim_df
-        self.days = sorted(sim_df['day'].unique())
+        all_days = sorted(sim_df['day'].unique())
+        self.days = all_days[:self.max_sim_days]
+        if len(self.days) > 0:
+            self.sim_df = self.sim_df[self.sim_df['day'].isin(self.days)].copy()
 
         # Fit scaler + PCA once on entire dataset — never refit during simulation
         full = df[ENERGY_FEATURES + [self.feature_y]].dropna()
@@ -175,6 +205,12 @@ class PipelineState:
         self.model_log     = []
         self.current_day = 0
         self.last_retrain_day = None
+
+    # Compatibility shim: legacy tests/UI still reference current_month.
+    @property
+    def current_month(self) -> int:
+        # Keep old semantics where this points to "next tick index" + 1 after init.
+        return self.current_day + 1
 
     @staticmethod
     def _fmt_day(day_val) -> str:
