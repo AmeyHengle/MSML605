@@ -212,11 +212,26 @@ async def reset():
 
 @app.get('/api/status')
 async def status():
+    if _state is None:
+        return {
+            'initialized': False,
+            'running': False,
+            'month_idx': None,
+            'total': None,
+        }
+
+    # Compatibility across legacy month-based and new day-based PipelineState.
+    total = None
+    if hasattr(_state, 'months'):
+        total = len(_state.months)
+    elif hasattr(_state, 'days'):
+        total = len(_state.days)
+
     return {
-        'initialized': _state is not None,
-        'running':     _simulation_running,
-        'month_idx':   _state.current_month if _state else None,
-        'total':       len(_state.months)   if _state else None,
+        'initialized': True,
+        'running': _simulation_running,
+        'month_idx': _state.current_month,
+        'total': total,
     }
 
 
