@@ -63,7 +63,7 @@ flowchart LR
   AGENT --> DRIFT[src/ml605_pipeline/drift.py + drift_service.py]
   AGENT --> REP[data/reports/*.html]
 
-  API -->|serve latest| REPORT[/api/agent/report/latest]
+  API -->|serve latest| REPORT["/api/agent/report/latest"]
 
   AGENT --> GROQ[Groq API optional]
   CI[GitHub Actions] -->|post-deploy trigger| API
