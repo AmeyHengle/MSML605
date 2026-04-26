@@ -325,6 +325,21 @@ jobs:
           overall_drift = extract(r"\[batch\]\s+overall_drift=(.+)")
           drift_score = extract(r"\[batch\]\s+drift_score\(max_psi\)=(.+)")
           drifted_features = extract(r"\[batch\]\s+drifted_features=(.+)")
+          proxy_old_rmse = extract(r"\[batch\]\s+proxy_old_rmse=(.+)")
+          proxy_new_rmse = extract(r"\[batch\]\s+proxy_new_rmse=(.+)")
+          proxy_rmse_delta = extract(r"\[batch\]\s+proxy_rmse_delta=(.+)")
+          decision_go_no_go = extract(r"\[batch\]\s+decision_go_no_go=(.+)", "n/a")
+          decision_confidence_pct = extract(r"\[batch\]\s+decision_confidence_pct=(.+)", "n/a")
+          decision_expected_impact = extract(r"\[batch\]\s+decision_expected_impact=(.+)", "n/a")
+          recommendation_action = extract(r"\[batch\]\s+recommendation_action=(.+)", "n/a")
+          bottlenecks_json_raw = extract(r"\[batch\]\s+bottlenecks_json=(.+)", "[]")
+          try:
+              bottlenecks = json.loads(bottlenecks_json_raw)
+              if not isinstance(bottlenecks, list):
+                  bottlenecks = []
+          except Exception:
+              bottlenecks = []
+          bottlenecks_text = "\n".join([f"- {str(x)}" for x in bottlenecks[:3]]) if bottlenecks else "n/a"
           narrative_json_raw = extract(r"\[batch\]\s+narrative_json=(.+)", "\"Narrative unavailable\"")
           try:
               narrative = json.loads(narrative_json_raw)
@@ -339,7 +354,13 @@ jobs:
           report_available = bool(status.get("report_available"))
           report_url = f"{os.environ['RENDER_URL']}/api/agent/report/latest" if report_available else "not available"
 
-          color = "#2eb67d" if agent_status == "succeeded" else "#f5a623"
+          decision_norm = str(decision_go_no_go).strip().upper()
+          if decision_norm == "GO":
+              color = "#2eb67d"
+          elif decision_norm == "NO-GO":
+              color = "#e01e5a"
+          else:
+              color = "#2eb67d" if agent_status == "succeeded" else "#f5a623"
           title = f":bar_chart: Drift report after deploy — {os.environ['BRANCH']}"
 
           payload = {
@@ -357,10 +378,24 @@ jobs:
                               {"type": "mrkdwn", "text": f"*Rows fetched*\n{rows_fetched}"},
                               {"type": "mrkdwn", "text": f"*Overall drift*\n{overall_drift}"},
                               {"type": "mrkdwn", "text": f"*Retrain performed*\n{retrain_performed}"},
+                              {"type": "mrkdwn", "text": f"*GO / NO-GO*\n{decision_go_no_go}"},
+                              {"type": "mrkdwn", "text": f"*Confidence*\n{decision_confidence_pct}%"},
+                              {"type": "mrkdwn", "text": f"*Expected impact*\n{decision_expected_impact}"},
+                              {"type": "mrkdwn", "text": f"*Recommendation*\n{recommendation_action}"},
                               {"type": "mrkdwn", "text": f"*Drift score (max PSI)*\n{drift_score}"},
                               {"type": "mrkdwn", "text": f"*Drifted features*\n{drifted_features}"},
+                              {"type": "mrkdwn", "text": f"*Old RMSE (proxy)*\n{proxy_old_rmse}"},
+                              {"type": "mrkdwn", "text": f"*New RMSE (proxy)*\n{proxy_new_rmse}"},
+                              {"type": "mrkdwn", "text": f"*RMSE delta (new-old)*\n{proxy_rmse_delta}"},
                               {"type": "mrkdwn", "text": f"*HTML report*\n{report_url}"},
                           ],
+                      },
+                      {
+                          "type": "section",
+                          "text": {
+                              "type": "mrkdwn",
+                              "text": f"*Top bottlenecks*\n{bottlenecks_text}",
+                          },
                       },
                       {
                           "type": "section",
