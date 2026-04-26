@@ -1,0 +1,421 @@
+name: Deploy
+
+on:
+  push:
+    branches:
+      - amey-demo
+
+jobs:
+  # ── Job 1: Unit tests (gate) ─────────────────────────────────────────────────
+  unit-tests:
+    name: Unit tests — pipeline.py
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: amey-demo
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt pytest pytest-cov
+
+      - name: Run unit tests
+        run: |
+          pytest tests/test_pipeline.py -v \
+            --tb=short \
+            --cov=pipeline \
+            --cov-report=term-missing \
+            --cov-fail-under=70
+        env:
+          PYTHONPATH: .
+
+  # ── Job 2: Deploy frontend to GitHub Pages ───────────────────────────────────
+  deploy-frontend:
+    name: Deploy frontend to GitHub Pages
+    runs-on: ubuntu-latest
+    needs: unit-tests
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: amey-demo
+
+      - uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./frontend
+          publish_branch: gh-pages
+          force_orphan: true
+
+  # ── Job 3: Deploy to Render ───────────────────────────────────────────────────
+  deploy-backend:
+    name: Deploy to Render
+    runs-on: ubuntu-latest
+    needs: unit-tests
+    steps:
+      - name: Ping Render deploy webhook
+        run: |
+          if [ -z "${{ secrets.RENDER_DEPLOY_HOOK_URL }}" ]; then
+            echo "Missing RENDER_DEPLOY_HOOK_URL secret"
+            exit 1
+          fi
+
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            --request POST \
+            "${{ secrets.RENDER_DEPLOY_HOOK_URL }}")
+          echo "Render webhook response: $STATUS"
+          if [ "$STATUS" != "200" ] && [ "$STATUS" != "201" ]; then
+            echo "Render webhook failed with status $STATUS"
+            exit 1
+          fi
+
+  # ── Job 4: Post-deploy smoke tests ────────────────────────────────────────────
+  smoke-tests:
+    name: Post-deploy smoke tests
+    runs-on: ubuntu-latest
+    needs: deploy-backend
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: amey-demo
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install test dependencies
+        run: pip install requests pytest pytest-timeout
+
+      - name: Poll until service is live
+        run: |
+          MAX=18
+          COUNT=0
+          until curl -sf "${{ secrets.RENDER_URL }}/api/status" > /dev/null; do
+            COUNT=$((COUNT+1))
+            if [ $COUNT -ge $MAX ]; then
+              echo "Service did not come up after $((MAX*10))s"
+              exit 1
+            fi
+            echo "Attempt $COUNT/$MAX — retrying in 10s..."
+            sleep 10
+          done
+          echo "Service is live"
+
+      - name: Run smoke tests
+        run: |
+          pytest tests/test_api.py -v \
+            --tb=short \
+            -k "not TestSimulate" \
+            --timeout=60
+        env:
+          BASE_URL: ${{ secrets.RENDER_URL }}
+          PYTHONPATH: .
+
+  # ── Job 5: Slack alert on failure ─────────────────────────────────────────────
+  notify-failure:
+    name: Slack alert — deploy failed
+    runs-on: ubuntu-latest
+    needs: [unit-tests, deploy-frontend, deploy-backend, smoke-tests]
+    if: |
+      failure() &&
+      !startsWith(github.event.head_commit.message, 'Revert')
+    steps:
+      - name: Send Slack failure alert
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          COMMIT_SHA: ${{ github.sha }}
+          COMMIT_MSG: ${{ github.event.head_commit.message }}
+          COMMIT_AUTHOR: ${{ github.event.head_commit.author.name }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          SHORT_SHA="${COMMIT_SHA:0:7}"
+          SAFE_MSG=$(echo "$COMMIT_MSG" | sed 's/"/\\"/g' | head -c 120)
+
+          curl -s -X POST "$SLACK_WEBHOOK_URL" \
+            -H 'Content-Type: application/json' \
+            -d "{
+              \"attachments\": [{
+                \"color\": \"#E24B4A\",
+                \"blocks\": [
+                  {
+                    \"type\": \"header\",
+                    \"text\": {
+                      \"type\": \"plain_text\",
+                      \"text\": \":rotating_light:  Deploy failed — $BRANCH\",
+                      \"emoji\": true
+                    }
+                  },
+                  {
+                    \"type\": \"section\",
+                    \"fields\": [
+                      {\"type\": \"mrkdwn\", \"text\": \"*Commit*\n\`$SHORT_SHA\` — $SAFE_MSG\"},
+                      {\"type\": \"mrkdwn\", \"text\": \"*Author*\n$COMMIT_AUTHOR\"},
+                      {\"type\": \"mrkdwn\", \"text\": \"*Branch*\n$BRANCH\"},
+                      {\"type\": \"mrkdwn\", \"text\": \"*Status*\nAutomatic rollback in progress...\"}
+                    ]
+                  },
+                  {
+                    \"type\": \"actions\",
+                    \"elements\": [{
+                      \"type\": \"button\",
+                      \"text\": {\"type\": \"plain_text\", \"text\": \"View failed run\"},
+                      \"url\": \"$RUN_URL\",
+                      \"style\": \"danger\"
+                    }]
+                  }
+                ]
+              }]
+            }"
+
+  # ── Job 6: Automatic git revert rollback ──────────────────────────────────────
+  rollback:
+    name: Auto rollback — git revert
+    runs-on: ubuntu-latest
+    needs: [smoke-tests]
+    if: ${{ needs.smoke-tests.result == 'failure' && !startsWith(github.event.head_commit.message, 'Revert') }}
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: amey-demo
+          fetch-depth: 2
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure git identity
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Revert last commit and push
+        run: |
+          FAILED_SHA="${{ github.sha }}"
+          SHORT_SHA="${FAILED_SHA:0:7}"
+          echo "Reverting commit $SHORT_SHA..."
+
+          # If HEAD is a merge commit, revert using mainline parent 1.
+          PARENT_COUNT=$(git rev-list --parents -n 1 HEAD | awk '{print NF-1}')
+          if [ "$PARENT_COUNT" -gt 1 ]; then
+            echo "HEAD is a merge commit; using git revert -m 1"
+            git revert -m 1 HEAD --no-edit
+          else
+            git revert HEAD --no-edit
+          fi
+
+          git push origin amey-demo
+          echo "Revert pushed — new deploy will trigger automatically"
+
+      - name: Send Slack rollback confirmation
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          FAILED_SHA: ${{ github.sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          SHORT_SHA="${FAILED_SHA:0:7}"
+          curl -s -X POST "$SLACK_WEBHOOK_URL" \
+            -H 'Content-Type: application/json' \
+            -d "{
+              \"attachments\": [{
+                \"color\": \"#f5a623\",
+                \"blocks\": [
+                  {
+                    \"type\": \"header\",
+                    \"text\": {
+                      \"type\": \"plain_text\",
+                      \"text\": \":rewind:  Rollback initiated — $BRANCH\",
+                      \"emoji\": true
+                    }
+                  },
+                  {
+                    \"type\": \"section\",
+                    \"fields\": [
+                      {\"type\": \"mrkdwn\", \"text\": \"*Reverted commit*\n\`$SHORT_SHA\`\"},
+                      {\"type\": \"mrkdwn\", \"text\": \"*Action*\nPrevious working commit redeploying now\"}
+                    ]
+                  },
+                  {
+                    \"type\": \"actions\",
+                    \"elements\": [{
+                      \"type\": \"button\",
+                      \"text\": {\"type\": \"plain_text\", \"text\": \"View run\"},
+                      \"url\": \"$RUN_URL\"
+                    }]
+                  }
+                ]
+              }]
+            }"
+
+  # ── Job 7: Post retrain/drift report to Slack ─────────────────────────────────
+  post-drift-report:
+    name: Slack report — deployed drift snapshot
+    runs-on: ubuntu-latest
+    needs: [deploy-backend, smoke-tests]
+    if: ${{ needs.smoke-tests.result == 'success' && !startsWith(github.event.head_commit.message, 'Revert') }}
+    steps:
+      - name: Trigger agent run on deployed service
+        env:
+          RENDER_URL: ${{ secrets.RENDER_URL }}
+        run: |
+          echo "Triggering agent run on ${RENDER_URL}..."
+          curl -fsS -X POST "${RENDER_URL}/api/agent/run" > /tmp/agent_run.json
+          cat /tmp/agent_run.json
+
+      - name: Wait for agent completion
+        env:
+          RENDER_URL: ${{ secrets.RENDER_URL }}
+        run: |
+          MAX=24
+          COUNT=0
+          while true; do
+            COUNT=$((COUNT+1))
+            curl -fsS "${RENDER_URL}/api/agent/status" > /tmp/agent_status.json
+            RUNNING=$(python3 -c "import json; print('true' if json.load(open('/tmp/agent_status.json')).get('running') else 'false')")
+            STATUS=$(python3 -c "import json; print(json.load(open('/tmp/agent_status.json')).get('status', 'unknown'))")
+            echo "poll ${COUNT}/${MAX} running=${RUNNING} status=${STATUS}"
+            if [ "$RUNNING" = "false" ]; then
+              break
+            fi
+            if [ $COUNT -ge $MAX ]; then
+              echo "Agent did not finish in time"
+              break
+            fi
+            sleep 10
+          done
+          curl -fsS "${RENDER_URL}/api/agent/logs" > /tmp/agent_logs.json
+
+      - name: Send Slack drift report summary
+        env:
+          RENDER_URL: ${{ secrets.RENDER_URL }}
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          if [ -z "$SLACK_WEBHOOK_URL" ]; then
+            echo "SLACK_WEBHOOK_URL is empty; skipping drift report notification"
+            exit 0
+          fi
+
+          python3 - <<'PY'
+          import json
+          import os
+          import re
+          import urllib.request
+
+          status = json.load(open("/tmp/agent_status.json"))
+          logs_payload = json.load(open("/tmp/agent_logs.json"))
+          logs = logs_payload.get("logs", [])
+
+          def extract(pattern, default="n/a"):
+              rx = re.compile(pattern)
+              for line in reversed(logs):
+                  m = rx.search(line)
+                  if m:
+                      return m.group(1)
+              return default
+
+          rows_fetched = extract(r"\[batch\]\s+rows_fetched=(.+)")
+          overall_drift = extract(r"\[batch\]\s+overall_drift=(.+)")
+          drift_score = extract(r"\[batch\]\s+drift_score\(max_psi\)=(.+)")
+          drifted_features = extract(r"\[batch\]\s+drifted_features=(.+)")
+          narrative_json_raw = extract(r"\[batch\]\s+narrative_json=(.+)", "\"Narrative unavailable\"")
+          try:
+              narrative = json.loads(narrative_json_raw)
+          except Exception:
+              narrative = "Narrative unavailable"
+          retrain_performed = extract(r"\[batch\]\s+retrain_performed=(.+)", "false").strip().lower()
+          if retrain_performed != "true":
+              print("No retrain was performed in this run; skipping Slack drift report.")
+              raise SystemExit(0)
+          agent_status = status.get("status", "unknown")
+          exit_code = status.get("exit_code", "n/a")
+          report_available = bool(status.get("report_available"))
+          report_url = f"{os.environ['RENDER_URL']}/api/agent/report/latest" if report_available else "not available"
+
+          color = "#2eb67d" if agent_status == "succeeded" else "#f5a623"
+          title = f":bar_chart: Drift report after deploy — {os.environ['BRANCH']}"
+
+          payload = {
+              "attachments": [{
+                  "color": color,
+                  "blocks": [
+                      {
+                          "type": "header",
+                          "text": {"type": "plain_text", "text": title, "emoji": True},
+                      },
+                      {
+                          "type": "section",
+                          "fields": [
+                              {"type": "mrkdwn", "text": f"*Agent status*\n{agent_status} (exit {exit_code})"},
+                              {"type": "mrkdwn", "text": f"*Rows fetched*\n{rows_fetched}"},
+                              {"type": "mrkdwn", "text": f"*Overall drift*\n{overall_drift}"},
+                              {"type": "mrkdwn", "text": f"*Retrain performed*\n{retrain_performed}"},
+                              {"type": "mrkdwn", "text": f"*Drift score (max PSI)*\n{drift_score}"},
+                              {"type": "mrkdwn", "text": f"*Drifted features*\n{drifted_features}"},
+                              {"type": "mrkdwn", "text": f"*HTML report*\n{report_url}"},
+                          ],
+                      },
+                      {
+                          "type": "section",
+                          "text": {
+                              "type": "mrkdwn",
+                              "text": f"*Groq narrative*\n{str(narrative)[:900]}",
+                          },
+                      },
+                      {
+                          "type": "actions",
+                          "elements": [{
+                              "type": "button",
+                              "text": {"type": "plain_text", "text": "View workflow run"},
+                              "url": os.environ["RUN_URL"],
+                          }],
+                      },
+                  ],
+              }]
+          }
+
+          req = urllib.request.Request(
+              os.environ["SLACK_WEBHOOK_URL"],
+              data=json.dumps(payload).encode("utf-8"),
+              headers={"Content-Type": "application/json"},
+              method="POST",
+          )
+          with urllib.request.urlopen(req) as resp:
+              print(resp.read().decode("utf-8", errors="ignore"))
+          PY
+
+  # ── Job 8: DORA metrics (always runs) ─────────────────────────────────────────
+  record-dora:
+    name: Record DORA metrics
+    runs-on: ubuntu-latest
+    needs: smoke-tests
+    if: always()
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: amey-demo
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install requests python-dateutil
+
+      - name: Compute DORA metrics
+        run: python scripts/dora_metrics.py
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPO: AmeyHengle/MSML605
+          WORKFLOW_NAME: Deploy
+          DEPLOY_JOB: deploy-backend
+          SMOKE_JOB: smoke-tests
+          DAYS_WINDOW: 30

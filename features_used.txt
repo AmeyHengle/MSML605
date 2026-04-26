@@ -1,0 +1,34 @@
+biomass
+coal
+day_of_week
+day_of_year
+factor_biomass
+factor_coal
+factor_dutch_imports
+factor_french_imports
+factor_gas_combined_cycle
+factor_gas_open_cycle
+factor_hydro
+factor_irish_imports
+factor_nuclear
+factor_oil
+factor_other
+factor_pumped_storage
+factor_solar
+factor_wind
+forecast_intensity
+gas
+hour
+hydro
+imports
+intensity_index_high
+intensity_index_low
+intensity_index_moderate
+intensity_index_very high
+intensity_index_very low
+is_weekend
+month
+nuclear
+other
+solar
+wind

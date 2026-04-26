@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: msml605
+    runtime: docker
+    branch: amey-demo
+    dockerfilePath: ./Dockerfile
+    envVars:
+      - key: PORT
+        value: 8000
+    healthCheckPath: /api/status

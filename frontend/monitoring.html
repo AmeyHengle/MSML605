@@ -1,0 +1,633 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CarbonWatch — Deployment Monitor</title>
+<link rel="stylesheet" href="style.css">
+<!-- NOTE: app.js is intentionally NOT loaded here.
+     It belongs to index.html (pipeline page) and would conflict
+     with this page's button handlers. -->
+<script src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
+<style>
+.kpi-strip{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px;}
+.kpi-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;
+          padding:12px 14px;border-left-width:3px;}
+.kpi-label{font-size:10px;letter-spacing:.08em;color:var(--text-dim);
+           text-transform:uppercase;margin-bottom:5px;}
+.kpi-val{font-family:'Syne',sans-serif;font-size:26px;font-weight:700;
+         color:var(--text-bright);line-height:1;}
+.kpi-sub{font-size:10px;color:var(--text-dim);margin-top:3px;}
+.ctrl-row{display:flex;align-items:center;gap:14px;flex-wrap:wrap;
+          padding:12px 20px;background:var(--surface);border-bottom:1px solid var(--border);}
+.ctrl-row label{font-size:10px;letter-spacing:.08em;color:var(--text-dim);text-transform:uppercase;}
+.ramp-track{display:flex;gap:0;border-radius:6px;overflow:hidden;border:1px solid var(--border);}
+.ramp-btn{padding:6px 14px;background:var(--surface-2);border:none;color:var(--text-dim);
+          font-family:'DM Mono',monospace;font-size:11px;cursor:pointer;transition:all .2s;}
+.ramp-btn.active{background:var(--accent-dim);color:var(--accent);}
+.ramp-btn:hover:not(.active){background:var(--surface);color:var(--text);}
+.obs-event{background:color-mix(in srgb,var(--accent) 8%,transparent);
+           border:1px solid var(--accent-dim);border-radius:8px;
+           padding:8px 12px;margin-bottom:8px;font-size:11px;
+           display:flex;align-items:center;gap:8px;}
+.obs-icon{font-size:14px;}
+.obs-text{flex:1;color:var(--text);line-height:1.4;}
+.obs-ts{font-size:10px;color:var(--text-dim);white-space:nowrap;}
+.req-row{display:flex;align-items:center;gap:8px;padding:3px 0;
+         border-bottom:.5px solid var(--border);font-size:11px;}
+.rm{color:var(--accent);min-width:42px;}
+.rp{color:var(--text);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.rs{min-width:36px;text-align:right;}
+.rl{min-width:50px;text-align:right;color:var(--text-dim);}
+.s200{color:var(--green);}.s4xx{color:var(--amber);}.s5xx{color:var(--red);}
+.latok{color:var(--green);}.latwarn{color:var(--amber);}.latbad{color:var(--red);}
+.progress-bar{height:4px;border-radius:2px;background:var(--border);
+              margin-top:6px;overflow:hidden;}
+.progress-fill{height:100%;border-radius:2px;background:var(--accent);transition:width .4s;}
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-left">
+    <span class="logo-mark">◈</span>
+    <span class="logo-text">CarbonWatch <em>Monitor</em></span>
+  </div>
+  <div class="topbar-center">
+    <div class="month-ticker">
+      <span class="ticker-label">Endpoint</span>
+      <span class="ticker-value" id="hdr-endpoint" style="font-size:11px;">—</span>
+    </div>
+    <div class="month-ticker">
+      <span class="ticker-label">Total requests</span>
+      <span class="ticker-value" id="hdr-total">0</span>
+    </div>
+    <div class="month-ticker">
+      <span class="ticker-label">Failures</span>
+      <span class="ticker-value" id="hdr-fail" style="color:var(--red);">0</span>
+    </div>
+  </div>
+  <div class="topbar-right">
+    <div class="pill ok" id="pill-health">READY</div>
+    <button class="theme-toggle" id="mon-theme-toggle" title="Toggle theme">
+      <span id="mon-theme-icon">☀</span>
+    </button>
+    <a href="index.html" style="font-size:11px;color:var(--text-dim);text-decoration:none;
+       padding:4px 10px;border:1px solid var(--border);border-radius:6px;">← Pipeline</a>
+  </div>
+</header>
+
+<!-- Controls -->
+<div class="ctrl-row">
+  <div style="display:flex;flex-direction:column;gap:4px;">
+    <label>Target URL</label>
+    <input id="cfg-url" type="text" value="https://msml605.onrender.com"
+           style="width:290px;font-size:12px;"/>
+  </div>
+  <div style="display:flex;flex-direction:column;gap:4px;">
+    <label>Load profile (virtual users)</label>
+    <div class="ramp-track">
+      <button class="ramp-btn active" data-users="5"   onclick="setProfile(this)">Light (5)</button>
+      <button class="ramp-btn"        data-users="20"  onclick="setProfile(this)">Medium (20)</button>
+      <button class="ramp-btn"        data-users="50"  onclick="setProfile(this)">Heavy (50)</button>
+      <button class="ramp-btn"        data-users="100" onclick="setProfile(this)">Stress (100)</button>
+    </div>
+  </div>
+  <div style="display:flex;flex-direction:column;gap:4px;">
+    <label>Duration (s)</label>
+    <input id="cfg-dur" type="number" value="60" min="10" max="300" step="10"
+           style="width:76px;font-size:12px;"/>
+  </div>
+  <div style="display:flex;flex-direction:column;gap:4px;">
+    <label>Ramp time (s)</label>
+    <input id="cfg-ramp" type="number" value="15" min="0" max="60" step="5"
+           style="width:76px;font-size:12px;"/>
+  </div>
+  <div style="margin-left:auto;display:flex;gap:8px;align-items:flex-end;">
+    <button class="btn btn-primary" id="mon-btn-init"  onclick="monInitModel()">⬡ Init model</button>
+    <button class="btn btn-run"     id="mon-btn-start" onclick="monStartTest()" disabled>▶ Start test</button>
+    <button class="btn btn-pause"   id="mon-btn-stop"  onclick="monStopTest()"  disabled>⏹ Stop</button>
+    <button class="btn btn-reset"   id="mon-btn-reset" onclick="monResetAll()"  disabled>↺ Reset</button>
+  </div>
+</div>
+
+<!-- Progress -->
+<div style="padding:0 20px 8px;background:var(--surface);border-bottom:1px solid var(--border);">
+  <div class="progress-bar"><div class="progress-fill" id="mon-progress" style="width:0%"></div></div>
+  <div style="display:flex;justify-content:space-between;padding:4px 0 0;">
+    <span id="mon-status" style="font-size:11px;color:var(--text-dim);">
+      Ready — click Init model, then Start test
+    </span>
+    <span id="mon-elapsed" style="font-size:11px;color:var(--text-dim);"></span>
+  </div>
+</div>
+
+<main class="grid">
+
+  <!-- LEFT -->
+  <div class="col-left">
+
+    <div class="kpi-strip">
+      <div class="kpi-card" style="border-left-color:var(--green);">
+        <div class="kpi-label">Req / sec</div>
+        <div class="kpi-val" id="kpi-rps">—</div>
+        <div class="kpi-sub">live</div>
+      </div>
+      <div class="kpi-card" style="border-left-color:var(--accent);">
+        <div class="kpi-label">p50 latency</div>
+        <div class="kpi-val" id="kpi-p50">—</div>
+        <div class="kpi-sub">ms</div>
+      </div>
+      <div class="kpi-card" style="border-left-color:var(--amber);">
+        <div class="kpi-label">p99 latency</div>
+        <div class="kpi-val" id="kpi-p99">—</div>
+        <div class="kpi-sub">ms</div>
+      </div>
+      <div class="kpi-card" style="border-left-color:var(--red);">
+        <div class="kpi-label">Error rate</div>
+        <div class="kpi-val" id="kpi-err">—</div>
+        <div class="kpi-sub">%</div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title">THROUGHPUT OVER TIME</span>
+        <span class="panel-sub">real requests/sec — measured client-side</span>
+      </div>
+      <div id="plot-tp" class="plot-area" style="height:200px;"></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title">LATENCY PERCENTILES</span>
+        <span class="panel-sub">p50 · p95 · p99 — divergence = saturation</span>
+      </div>
+      <div id="plot-lat" class="plot-area" style="height:190px;"></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title">ERROR RATE</span>
+        <span class="panel-sub">% failed requests — threshold at 1%</span>
+      </div>
+      <div id="plot-err" class="plot-area" style="height:150px;"></div>
+    </div>
+
+  </div>
+
+  <!-- RIGHT -->
+  <div class="col-right">
+
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title">TEST SUMMARY</span>
+        <span class="version-badge" id="profile-badge">Light · 5 users</span>
+      </div>
+      <div style="padding:12px 14px;display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+        <div style="background:var(--surface-2);border-radius:8px;padding:10px 12px;">
+          <div class="kpi-label">Peak RPS</div>
+          <div class="kpi-val" style="font-size:20px;" id="s-peak-rps">—</div>
+        </div>
+        <div style="background:var(--surface-2);border-radius:8px;padding:10px 12px;">
+          <div class="kpi-label">Median latency</div>
+          <div class="kpi-val" style="font-size:20px;" id="s-median">—</div>
+        </div>
+        <div style="background:var(--surface-2);border-radius:8px;padding:10px 12px;">
+          <div class="kpi-label">Total requests</div>
+          <div class="kpi-val" style="font-size:20px;" id="s-total">—</div>
+        </div>
+        <div style="background:var(--surface-2);border-radius:8px;padding:10px 12px;">
+          <div class="kpi-label">Total failures</div>
+          <div class="kpi-val" style="font-size:20px;" id="s-fail">—</div>
+        </div>
+        <div style="background:var(--surface-2);border-radius:8px;padding:10px 12px;">
+          <div class="kpi-label">p95 latency</div>
+          <div class="kpi-val" style="font-size:20px;" id="s-p95">—</div>
+        </div>
+        <div style="background:var(--surface-2);border-radius:8px;padding:10px 12px;">
+          <div class="kpi-label">p99 latency</div>
+          <div class="kpi-val" style="font-size:20px;" id="s-p99">—</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title">LATENCY DISTRIBUTION</span>
+        <span class="panel-sub">histogram of all response times</span>
+      </div>
+      <div id="plot-hist" class="plot-area" style="height:170px;"></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title">OBSERVATIONS</span>
+        <span class="log-count" id="obs-count">0</span>
+      </div>
+      <div style="padding:10px 14px;max-height:130px;overflow-y:auto;" id="obs-log">
+        <div style="font-size:11px;color:var(--text-dim);">
+          Automatic observations will appear during the test.
+        </div>
+      </div>
+    </div>
+
+    <div class="panel panel--log">
+      <div class="panel-header">
+        <span class="panel-title">LIVE REQUEST LOG</span>
+        <span class="log-count" id="req-count">0 requests</span>
+      </div>
+      <div class="log-body" id="req-log" style="max-height:200px;">
+        <div class="log-entry log-entry--idle">Awaiting requests...</div>
+      </div>
+    </div>
+
+  </div>
+
+</main>
+
+<script>
+// ── All monitoring JS is self-contained — no dependency on app.js ─────────────
+
+const MON_API = document.getElementById('cfg-url').value.trim();
+
+// ── State ─────────────────────────────────────────────────────────────────────
+let monRunning       = false;
+let monModelReady    = false;
+let monStartTime     = null;
+let monWorkerTimers  = [];
+let monWindowBucket  = [];
+let monAllLatencies  = [];
+let monTotalReqs     = 0;
+let monTotalFails    = 0;
+let monObsCount      = 0;
+let monReqDisplay    = 0;
+let monTargetUsers   = 5;
+let monDuration      = 60;
+let monRampTime      = 15;
+let monPrevP99       = 0;
+let monPrevErrPct    = 0;
+let monPrevRps       = 0;
+
+const MAX_PTS = 120;
+const TS=[],RPS=[],P50=[],P95=[],P99=[],ERR=[];
+
+const SAMPLES=[
+  [9.1,0.0,11.0,44.0,18.2,0.0,3.1,0.0,14.6],
+  [10.8,0.0,12.1,29.8,17.9,0.0,1.6,20.5,7.2],
+  [9.5,0.0,10.6,22.8,18.0,0.0,1.0,0.0,38.1],
+  [4.3,3.7,16.8,37.4,12.0,0.0,0.4,0.0,25.4],
+  [7.2,0.4,18.4,51.2,18.9,0.0,0.4,0.0,3.5],
+  [8.7,0.0,6.5,45.5,22.7,0.0,1.6,0.0,14.9],
+  [7.4,0.0,13.2,29.8,13.3,0.0,0.6,21.8,14.0],
+  [4.4,0.0,3.2,9.8,14.5,0.0,0.1,18.9,49.0],
+];
+
+// ── Plotly helpers ────────────────────────────────────────────────────────────
+function monTheme(){
+  const d=document.documentElement.getAttribute('data-theme')==='dark';
+  return{paper:'rgba(0,0,0,0)',plot:'rgba(0,0,0,0)',
+         grid:d?'#1e2233':'#e5e7ef',text:d?'#6b7394':'#8890aa'};
+}
+function monLayout(yl,ex){
+  const t=monTheme();
+  return{paper_bgcolor:t.paper,plot_bgcolor:t.plot,
+    font:{family:"'DM Mono',monospace",color:t.text,size:10},
+    xaxis:{gridcolor:t.grid,zeroline:false,color:t.text,...(ex?.xaxis||{})},
+    yaxis:{gridcolor:t.grid,zeroline:false,color:t.text,
+           title:{text:yl,font:{size:10}},...(ex?.yaxis||{})},
+    margin:{l:46,r:12,t:8,b:34},showlegend:true,
+    legend:{bgcolor:'rgba(0,0,0,0)',font:{size:9},x:0,y:1},...(ex||{})};
+}
+const MCFG={displayModeBar:false,responsive:true};
+
+function monInitPlots(){
+  Plotly.newPlot('plot-tp',[
+    {x:[],y:[],name:'req/s',type:'scatter',mode:'lines',fill:'tozeroy',
+     fillcolor:'rgba(127,119,221,0.1)',line:{color:'#7F77DD',width:2}},
+  ],monLayout('req/s'),MCFG);
+  Plotly.newPlot('plot-lat',[
+    {x:[],y:[],name:'p50',type:'scatter',mode:'lines',line:{color:'#1D9E75',width:2}},
+    {x:[],y:[],name:'p95',type:'scatter',mode:'lines',line:{color:'#BA7517',width:1.8,dash:'dot'}},
+    {x:[],y:[],name:'p99',type:'scatter',mode:'lines',line:{color:'#E24B4A',width:1.8,dash:'dash'}},
+  ],monLayout('ms'),MCFG);
+  Plotly.newPlot('plot-err',[
+    {x:[],y:[],name:'error %',type:'bar',marker:{color:[]},width:0.6},
+  ],{...monLayout('error %'),
+    shapes:[{type:'line',xref:'paper',x0:0,x1:1,y0:1,y1:1,
+             line:{color:'#E24B4A',width:1,dash:'dot'}}]},MCFG);
+  Plotly.newPlot('plot-hist',[
+    {x:[],type:'histogram',marker:{color:'#7F77DD',opacity:0.8},xbins:{size:25}},
+  ],{...monLayout('count',{xaxis:{title:{text:'latency (ms)',font:{size:10}}}}),
+    bargap:0.05,margin:{l:44,r:10,t:8,b:38}},MCFG);
+}
+
+// ── Percentile ────────────────────────────────────────────────────────────────
+function monPct(arr,p){
+  if(!arr.length)return 0;
+  const s=[...arr].sort((a,b)=>a-b);
+  return s[Math.min(Math.floor(s.length*p/100),s.length-1)];
+}
+
+// ── Single request ────────────────────────────────────────────────────────────
+async function monFireReq(){
+  const url=document.getElementById('cfg-url').value.trim().replace(/\/$/,'');
+  const features=SAMPLES[Math.floor(Math.random()*SAMPLES.length)];
+  const t0=performance.now();
+  let status=0,ok=false;
+  try{
+    const r=await fetch(`${url}/api/predict`,{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({features}),
+    });
+    status=r.status;ok=(r.status===200);
+  }catch(e){status=0;ok=false;}
+  const lat=performance.now()-t0;
+  if(!ok)monTotalFails++;
+  monTotalReqs++;
+  monWindowBucket.push({lat,ok,status});
+  monAllLatencies.push(lat);
+  monLogReq(status,lat);
+}
+
+// ── Virtual user ──────────────────────────────────────────────────────────────
+function monSleep(ms){return new Promise(r=>setTimeout(r,ms));}
+async function monWorker(){
+  while(monRunning){
+    await monFireReq();
+    await monSleep(80+Math.random()*120);
+  }
+}
+
+// ── Aggregate every second ────────────────────────────────────────────────────
+function monAggregate(){
+  const w=monWindowBucket.splice(0);
+  if(!w.length)return;
+  const now=new Date().toLocaleTimeString('en-GB',{hour12:false});
+  const lats=w.map(r=>r.lat);
+  const failed=w.filter(r=>!r.ok).length;
+  const errPct=(failed/w.length*100);
+  const curRps=w.length;
+  const curP50=monPct(lats,50);
+  const curP95=monPct(lats,95);
+  const curP99=monPct(lats,99);
+
+  [TS,RPS,P50,P95,P99,ERR].forEach(a=>{if(a.length>=MAX_PTS)a.shift();});
+  TS.push(now);RPS.push(curRps);P50.push(+curP50.toFixed(0));
+  P95.push(+curP95.toFixed(0));P99.push(+curP99.toFixed(0));
+  ERR.push(+errPct.toFixed(2));
+
+  Plotly.restyle('plot-tp',{x:[TS],y:[RPS]},[0]);
+  Plotly.restyle('plot-lat',{x:[TS,TS,TS],y:[P50,P95,P99]},[0,1,2]);
+  const ec=ERR.map(v=>v===0?'rgba(29,158,117,.6)':v<1?'rgba(186,117,23,.7)':'rgba(224,74,74,.75)');
+  Plotly.restyle('plot-err',{x:[TS],y:[ERR],'marker.color':[ec]},[0]);
+  Plotly.restyle('plot-hist',{x:[monAllLatencies]},[0]);
+
+  monKpi('kpi-rps',curRps,'live');
+  monKpi('kpi-p50',curP50.toFixed(0),'ms');
+  monKpi('kpi-p99',curP99.toFixed(0),'ms',
+    curP99>500?'var(--red)':curP99>200?'var(--amber)':null);
+  monKpi('kpi-err',errPct.toFixed(2),'%',
+    errPct>1?'var(--red)':errPct>0?'var(--amber)':'var(--green)');
+
+  document.getElementById('hdr-total').textContent=monTotalReqs.toLocaleString();
+  document.getElementById('hdr-fail').textContent=monTotalFails.toLocaleString();
+
+  const pill=document.getElementById('pill-health');
+  if(errPct>5){pill.className='pill drifting';pill.textContent='DEGRADED';}
+  else if(errPct>0){pill.className='pill';pill.textContent='WARNING';}
+  else{pill.className='pill ok';pill.textContent='RUNNING';}
+
+  document.getElementById('s-peak-rps').textContent=Math.max(...RPS).toFixed(0)+' req/s';
+  document.getElementById('s-median').textContent=monPct(monAllLatencies,50).toFixed(0)+' ms';
+  document.getElementById('s-total').textContent=monTotalReqs.toLocaleString();
+  document.getElementById('s-fail').textContent=monTotalFails.toLocaleString();
+  document.getElementById('s-p95').textContent=monPct(monAllLatencies,95).toFixed(0)+' ms';
+  document.getElementById('s-p99').textContent=monPct(monAllLatencies,99).toFixed(0)+' ms';
+
+  monAutoObserve(curRps,curP99,errPct);
+  monPrevRps=curRps;monPrevP99=curP99;monPrevErrPct=errPct;
+}
+
+function monKpi(id,val,sub,color){
+  const el=document.getElementById(id);
+  el.textContent=val;
+  el.style.color=color||'var(--text-bright)';
+}
+
+// ── Auto observations ─────────────────────────────────────────────────────────
+function monAutoObserve(curRps,curP99,errPct){
+  if(curP99>500&&monPrevP99<=500)
+    monObs('▲','p99 latency exceeded 500ms — saturation point reached','var(--amber)');
+  if(errPct>1&&monPrevErrPct<=1)
+    monObs('⚠','Error rate crossed 1% threshold','var(--red)');
+  if(errPct===0&&monPrevErrPct>1)
+    monObs('✓','Error rate recovered to 0%','var(--green)');
+  if(curRps>monPrevRps*1.8&&curRps>15&&monPrevRps>0)
+    monObs('↑',`Throughput spike: ${monPrevRps} → ${curRps} req/s`,'var(--accent)');
+}
+
+function monObs(icon,text,color){
+  monObsCount++;
+  document.getElementById('obs-count').textContent=monObsCount;
+  const log=document.getElementById('obs-log');
+  if(monObsCount===1)log.innerHTML='';
+  const ts=new Date().toLocaleTimeString('en-GB',{hour12:false});
+  const el=document.createElement('div');
+  el.className='obs-event';
+  el.style.borderColor=`color-mix(in srgb,${color} 40%,transparent)`;
+  el.innerHTML=`<span class="obs-icon" style="color:${color}">${icon}</span>
+    <span class="obs-text">${text}</span>
+    <span class="obs-ts">${ts}</span>`;
+  log.prepend(el);
+}
+
+// ── Request log ───────────────────────────────────────────────────────────────
+function monLogReq(status,lat){
+  monReqDisplay++;
+  document.getElementById('req-count').textContent=
+    `${monTotalReqs.toLocaleString()} requests`;
+  if(monReqDisplay%4!==0)return;
+  const body=document.getElementById('req-log');
+  if(monReqDisplay===4)body.innerHTML='';
+  const sc=status===200?'s200':status===0?'s5xx':status<500?'s4xx':'s5xx';
+  const lc=lat<100?'latok':lat<300?'latwarn':'latbad';
+  const st=status===0?'ERR':status;
+  const t=new Date().toLocaleTimeString('en-GB',{hour12:false});
+  const row=document.createElement('div');
+  row.className='req-row';
+  row.innerHTML=`<span class="log-ts">${t}</span>
+    <span class="rm">POST</span>
+    <span class="rp">/api/predict</span>
+    <span class="rs ${sc}">${st}</span>
+    <span class="rl ${lc}">${lat.toFixed(0)}ms</span>`;
+  body.prepend(row);
+  while(body.children.length>60)body.removeChild(body.lastChild);
+}
+
+// ── Init model ────────────────────────────────────────────────────────────────
+async function monInitModel(){
+  const url=document.getElementById('cfg-url').value.trim().replace(/\/$/,'');
+  document.getElementById('hdr-endpoint').textContent=url;
+  document.getElementById('mon-btn-init').disabled=true;
+  monSetStatus('Pinging server...');
+
+  try{ await fetch(`${url}/api/status`); }catch(_){}
+
+  monSetStatus('Initialising model — loading data and fitting PCA...');
+
+  const controller=new AbortController();
+  const tid=setTimeout(()=>controller.abort(),120000);
+  try{
+    const r=await fetch(`${url}/api/initialize`,{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        feature_x:'gas',feature_y:'forecast_intensity',
+        ks_threshold:0.10,n_init:10,n_monthly:3,speed:0.0,
+      }),
+      signal:controller.signal,
+    });
+    clearTimeout(tid);
+    if(!r.ok)throw new Error(`Server returned ${r.status}`);
+    const j=await r.json();
+    if(!j.data?.pc1_range)throw new Error('Unexpected response shape');
+    monModelReady=true;
+    monSetStatus('Model ready — set load profile and click Start test');
+    document.getElementById('mon-btn-start').disabled=false;
+    document.getElementById('mon-btn-reset').disabled=false;
+    monObs('✓',`Model initialised at ${url}`,'var(--green)');
+  }catch(e){
+    clearTimeout(tid);
+    const msg=e.name==='AbortError'?'Timed out after 120s':e.message;
+    monSetStatus(`Init failed: ${msg} — try again`);
+    document.getElementById('mon-btn-init').disabled=false;
+    monObs('✗',`Init failed: ${msg}`,'var(--red)');
+  }
+}
+
+// ── Start test ────────────────────────────────────────────────────────────────
+function monStartTest(){
+  if(!monModelReady){
+    monObs('→','Skipping init — using model already in server memory','var(--accent)');
+    monModelReady=true;
+  }
+  monRunning=true;
+  monStartTime=Date.now();
+  monDuration=parseInt(document.getElementById('cfg-dur').value);
+  monRampTime=parseInt(document.getElementById('cfg-ramp').value);
+
+  document.getElementById('mon-btn-start').disabled=true;
+  document.getElementById('mon-btn-stop').disabled=false;
+  document.getElementById('mon-btn-init').disabled=true;
+
+  monObs('▶',`Test started — ${monTargetUsers} users · ${monDuration}s`,'var(--accent)');
+
+  const spawnGap=(monRampTime*1000)/Math.max(monTargetUsers,1);
+  for(let i=0;i<monTargetUsers;i++){
+    const t=setTimeout(()=>{if(monRunning)monWorker();},Math.round(i*spawnGap));
+    monWorkerTimers.push(t);
+  }
+
+  const agg=setInterval(monAggregate,1000);
+  monWorkerTimers.push(agg);
+
+  const prog=setInterval(()=>{
+    const el=(Date.now()-monStartTime)/1000;
+    document.getElementById('mon-progress').style.width=
+      Math.min(100,el/monDuration*100)+'%';
+    document.getElementById('mon-elapsed').textContent=
+      `${el.toFixed(0)}s / ${monDuration}s`;
+    monSetStatus(`Running — ${monTargetUsers} users · ${monTotalReqs.toLocaleString()} requests`);
+    if(el>=monDuration)monStopTest();
+  },500);
+  monWorkerTimers.push(prog);
+}
+
+// ── Stop ──────────────────────────────────────────────────────────────────────
+function monStopTest(){
+  monRunning=false;
+  monWorkerTimers.forEach(t=>{clearTimeout(t);clearInterval(t);});
+  monWorkerTimers=[];
+  document.getElementById('mon-btn-start').disabled=false;
+  document.getElementById('mon-btn-stop').disabled=true;
+  document.getElementById('mon-progress').style.width='100%';
+  const pill=document.getElementById('pill-health');
+  pill.className='pill'; pill.textContent='DONE';
+  const dur=((Date.now()-monStartTime)/1000).toFixed(0);
+  monSetStatus(`Complete — ${dur}s · ${monTotalReqs.toLocaleString()} requests · ${monTotalFails} failures`);
+  if(monAllLatencies.length)
+    monObs('⏹',
+      `Done. Peak ${Math.max(...RPS)} req/s · p50 ${monPct(monAllLatencies,50).toFixed(0)}ms · p99 ${monPct(monAllLatencies,99).toFixed(0)}ms`,
+      'var(--text-dim)');
+}
+
+// ── Reset ─────────────────────────────────────────────────────────────────────
+function monResetAll(){
+  monStopTest();
+  [TS,RPS,P50,P95,P99,ERR].forEach(a=>a.length=0);
+  monAllLatencies.length=0;monWindowBucket.length=0;
+  monTotalReqs=monTotalFails=monObsCount=monReqDisplay=0;
+  monPrevRps=monPrevP99=monPrevErrPct=0;monModelReady=false;
+
+  ['plot-tp','plot-lat','plot-err','plot-hist'].forEach(id=>{
+    try{Plotly.purge(id);}catch(_){}
+  });
+  monInitPlots();
+
+  ['kpi-rps','kpi-p50','kpi-p99','kpi-err',
+   's-peak-rps','s-median','s-total','s-fail','s-p95','s-p99'].forEach(id=>{
+    document.getElementById(id).textContent='—';
+  });
+  document.getElementById('hdr-total').textContent='0';
+  document.getElementById('hdr-fail').textContent='0';
+  document.getElementById('req-log').innerHTML=
+    '<div class="log-entry log-entry--idle">Awaiting requests...</div>';
+  document.getElementById('obs-log').innerHTML=
+    '<div style="font-size:11px;color:var(--text-dim);">Automatic observations will appear during the test.</div>';
+  document.getElementById('obs-count').textContent='0';
+  document.getElementById('req-count').textContent='0 requests';
+  document.getElementById('mon-progress').style.width='0%';
+  document.getElementById('mon-elapsed').textContent='';
+  document.getElementById('pill-health').className='pill ok';
+  document.getElementById('pill-health').textContent='READY';
+  document.getElementById('mon-btn-init').disabled=false;
+  document.getElementById('mon-btn-start').disabled=true;
+  document.getElementById('mon-btn-stop').disabled=true;
+  document.getElementById('mon-btn-reset').disabled=true;
+  monSetStatus('Ready — click Init model, then Start test');
+}
+
+// ── Profile selector ──────────────────────────────────────────────────────────
+function setProfile(btn){
+  document.querySelectorAll('.ramp-btn').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  monTargetUsers=parseInt(btn.dataset.users);
+  document.getElementById('profile-badge').textContent=btn.textContent+' users';
+}
+
+function monSetStatus(msg){
+  document.getElementById('mon-status').textContent=msg;
+}
+
+// ── Theme toggle ──────────────────────────────────────────────────────────────
+document.getElementById('mon-theme-toggle').addEventListener('click',()=>{
+  const h=document.documentElement;
+  const d=h.getAttribute('data-theme')==='dark';
+  h.setAttribute('data-theme',d?'light':'dark');
+  document.getElementById('mon-theme-icon').textContent=d?'☽':'☀';
+  const u={paper_bgcolor:'rgba(0,0,0,0)',plot_bgcolor:'rgba(0,0,0,0)'};
+  ['plot-tp','plot-lat','plot-err','plot-hist'].forEach(id=>{
+    try{Plotly.relayout(id,u);}catch(_){}
+  });
+});
+
+// ── Boot ──────────────────────────────────────────────────────────────────────
+window.addEventListener('load',()=>{
+  monInitPlots();
+  monSetStatus('Ready — click Init model, then Start test');
+});
+</script>
+</body>
+</html>
