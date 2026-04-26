@@ -384,6 +384,11 @@ jobs:
                               {"type": "mrkdwn", "text": f"*Recommendation*\n{recommendation_action}"},
                               {"type": "mrkdwn", "text": f"*Drift score (max PSI)*\n{drift_score}"},
                               {"type": "mrkdwn", "text": f"*Drifted features*\n{drifted_features}"},
+                          ],
+                      },
+                      {
+                          "type": "section",
+                          "fields": [
                               {"type": "mrkdwn", "text": f"*Old RMSE (proxy)*\n{proxy_old_rmse}"},
                               {"type": "mrkdwn", "text": f"*New RMSE (proxy)*\n{proxy_new_rmse}"},
                               {"type": "mrkdwn", "text": f"*RMSE delta (new-old)*\n{proxy_rmse_delta}"},
@@ -422,8 +427,13 @@ jobs:
               headers={"Content-Type": "application/json"},
               method="POST",
           )
-          with urllib.request.urlopen(req) as resp:
-              print(resp.read().decode("utf-8", errors="ignore"))
+          try:
+              with urllib.request.urlopen(req) as resp:
+                  print(resp.read().decode("utf-8", errors="ignore"))
+          except urllib.error.HTTPError as e:
+              body = e.read().decode("utf-8", errors="ignore")
+              print(f"Slack webhook HTTPError {e.code}: {body}")
+              raise
           PY
 
   # ── Job 8: DORA metrics (always runs) ─────────────────────────────────────────
