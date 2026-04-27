@@ -1,0 +1,850 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MSML605 Project — Carbon Intensity Prediction (Load Testing)</title>
+<link rel="stylesheet" href="style.css">
+<!-- NOTE: app.js is intentionally NOT loaded here.
+     It belongs to simulation.html (pipeline page) and would conflict
+     with this page's button handlers. -->
+<script src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
+<style>
+.kpi-strip{display:grid;grid-template-columns:repeat(6,1fr);gap:10px;margin-bottom:14px;}
+.kpi-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;
+          padding:12px 14px;border-left-width:3px;}
+.kpi-label{font-size:10px;letter-spacing:.08em;color:var(--text-dim);
+           text-transform:uppercase;margin-bottom:5px;}
+.kpi-val{font-family:'Syne',sans-serif;font-size:24px;font-weight:700;
+         color:var(--text-bright);line-height:1;}
+.kpi-sub{font-size:10px;color:var(--text-dim);margin-top:3px;}
+.ctrl-row{display:flex;align-items:center;gap:14px;flex-wrap:wrap;
+          padding:12px 20px;background:var(--surface);border-bottom:1px solid var(--border);}
+.ctrl-row label{font-size:10px;letter-spacing:.08em;color:var(--text-dim);text-transform:uppercase;}
+.obs-event{background:color-mix(in srgb,var(--accent) 8%,transparent);
+           border:1px solid var(--accent-dim);border-radius:8px;
+           padding:8px 12px;margin-bottom:8px;font-size:11px;
+           display:flex;align-items:center;gap:8px;}
+.obs-icon{font-size:14px;}
+.obs-text{flex:1;color:var(--text);line-height:1.4;}
+.obs-ts{font-size:10px;color:var(--text-dim);white-space:nowrap;}
+.req-row{display:flex;align-items:center;gap:8px;padding:3px 0;
+         border-bottom:.5px solid var(--border);font-size:11px;}
+.rm{color:var(--accent);min-width:42px;}
+.rp{color:var(--text);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.rs{min-width:36px;text-align:right;}
+.rl{min-width:50px;text-align:right;color:var(--text-dim);}
+.s200{color:var(--green);}.s4xx{color:var(--amber);}.s5xx{color:var(--red);}
+.latok{color:var(--green);}.latwarn{color:var(--amber);}.latbad{color:var(--red);}
+.progress-bar{height:4px;border-radius:2px;background:var(--border);
+              margin-top:6px;overflow:hidden;}
+.progress-fill{height:100%;border-radius:2px;background:var(--accent);transition:width .4s;}
+
+/* Phase indicator */
+.phase-track{display:flex;align-items:center;gap:0;margin-left:16px;}
+.phase-step{display:flex;align-items:center;gap:6px;padding:4px 10px;
+            border-radius:6px;font-size:10px;letter-spacing:.06em;
+            color:var(--text-dim);transition:all .4s;border:1px solid transparent;}
+.phase-step.active{color:var(--text-bright);border-color:var(--accent);
+                   background:var(--accent-dim);}
+.phase-step.done{color:var(--green);border-color:var(--green);
+                 background:color-mix(in srgb,var(--green) 8%,transparent);}
+.phase-dot{width:7px;height:7px;border-radius:50%;background:var(--border-hi);
+           transition:all .4s;flex-shrink:0;}
+.phase-step.active .phase-dot{background:var(--accent);box-shadow:0 0 6px var(--accent);}
+.phase-step.done .phase-dot{background:var(--green);}
+.phase-arrow{color:var(--border-hi);font-size:11px;margin:0 2px;}
+
+/* Instance provisioning blink */
+.inst-blink{animation:instPulse .6s infinite;}
+@keyframes instPulse{0%,100%{opacity:1}50%{opacity:.3}}
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-left">
+    <span class="logo-mark">◈</span>
+    <span class="logo-text">MSML605 Project: <em>Carbon Intensity Prediction</em></span>
+  </div>
+  <nav class="topbar-nav">
+    <a href="index.html" class="nav-link">Dashboard</a>
+    <a href="simulation.html" class="nav-link">Simulation</a>
+    <a href="monitoring.html" class="nav-link nav-link--active">Monitor</a>
+  </nav>
+  <div class="topbar-center">
+    <div class="month-ticker">
+      <span class="ticker-label">Total requests</span>
+      <span class="ticker-value" id="hdr-total">0</span>
+    </div>
+    <div class="month-ticker">
+      <span class="ticker-label">Failures</span>
+      <span class="ticker-value" id="hdr-fail" style="color:var(--red);">0</span>
+    </div>
+  </div>
+  <div class="topbar-right">
+    <div class="pill ok" id="pill-health">READY</div>
+    <button class="theme-toggle" id="mon-theme-toggle" title="Toggle theme">
+      <span id="mon-theme-icon">☀</span>
+    </button>
+  </div>
+</header>
+
+<!-- Controls -->
+<div class="ctrl-row">
+  <div style="display:flex;flex-direction:column;gap:4px;">
+    <label>Target URL</label>
+    <input id="cfg-url" type="text" value="https://msml605.onrender.com"
+           style="width:290px;font-size:12px;"/>
+  </div>
+  <div style="display:flex;gap:8px;align-items:flex-end;">
+    <button class="btn btn-primary" id="mon-btn-init"  onclick="monInitModel()" style="font-size:11px;padding:6px 12px;">⬡ Init</button>
+    <button class="btn btn-run"     id="mon-btn-start" onclick="startLoadTest()">▶ Load Test</button>
+    <button class="btn btn-pause"   id="mon-btn-stop"  onclick="monStopTest()"  disabled>⏹ Stop</button>
+    <button class="btn btn-reset"   id="mon-btn-reset" onclick="monResetAll()"  disabled>↺ Reset</button>
+  </div>
+  <div class="phase-track" id="phase-track">
+    <div class="phase-step" data-phase="0"><span class="phase-dot"></span> Light</div>
+    <span class="phase-arrow">→</span>
+    <div class="phase-step" data-phase="1"><span class="phase-dot"></span> Medium</div>
+    <span class="phase-arrow">→</span>
+    <div class="phase-step" data-phase="2"><span class="phase-dot"></span> Heavy</div>
+    <span class="phase-arrow">→</span>
+    <div class="phase-step" data-phase="3"><span class="phase-dot"></span> Stress</div>
+  </div>
+</div>
+
+<!-- Progress -->
+<div style="padding:0 20px 8px;background:var(--surface);border-bottom:1px solid var(--border);">
+  <div class="progress-bar"><div class="progress-fill" id="mon-progress" style="width:0%"></div></div>
+  <div style="display:flex;justify-content:space-between;padding:4px 0 0;">
+    <span id="mon-status" style="font-size:11px;color:var(--text-dim);">
+      Ready — click Load Test to begin automated demo
+    </span>
+    <span id="mon-elapsed" style="font-size:11px;color:var(--text-dim);"></span>
+  </div>
+</div>
+
+<main class="grid">
+
+  <!-- LEFT -->
+  <div class="col-left">
+
+    <div class="kpi-strip">
+      <div class="kpi-card" style="border-left-color:var(--green);">
+        <div class="kpi-label">Req / sec</div>
+        <div class="kpi-val" id="kpi-rps">—</div>
+        <div class="kpi-sub">live</div>
+      </div>
+      <div class="kpi-card" style="border-left-color:var(--accent);">
+        <div class="kpi-label">p50 latency</div>
+        <div class="kpi-val" id="kpi-p50">—</div>
+        <div class="kpi-sub">ms</div>
+      </div>
+      <div class="kpi-card" style="border-left-color:var(--amber);">
+        <div class="kpi-label">p99 latency</div>
+        <div class="kpi-val" id="kpi-p99">—</div>
+        <div class="kpi-sub">ms</div>
+      </div>
+      <div class="kpi-card" style="border-left-color:var(--red);">
+        <div class="kpi-label">Error rate</div>
+        <div class="kpi-val" id="kpi-err">—</div>
+        <div class="kpi-sub">%</div>
+      </div>
+      <div class="kpi-card" style="border-left-color:var(--green);">
+        <div class="kpi-label">Instances</div>
+        <div class="kpi-val" id="kpi-inst">1</div>
+        <div class="kpi-sub" id="kpi-inst-sub">running</div>
+      </div>
+      <div class="kpi-card" style="border-left-color:var(--accent);">
+        <div class="kpi-label">Capacity</div>
+        <div class="kpi-val" id="kpi-cap">0%</div>
+        <div class="kpi-sub" id="kpi-cap-sub">utilization</div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title">SCALING TIMELINE</span>
+        <span class="panel-sub">RPS + auto-scale events</span>
+      </div>
+      <div id="plot-scale" class="plot-area" style="height:210px;"></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title">LATENCY PERCENTILES</span>
+        <span class="panel-sub">p50 · p95 · p99 — divergence = saturation</span>
+      </div>
+      <div id="plot-lat" class="plot-area" style="height:190px;"></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title">ERROR RATE</span>
+        <span class="panel-sub">% failed requests — threshold at 1%</span>
+      </div>
+      <div id="plot-err" class="plot-area" style="height:150px;"></div>
+    </div>
+
+  </div>
+
+  <!-- RIGHT -->
+  <div class="col-right">
+
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title">TEST SUMMARY</span>
+        <span class="version-badge" id="profile-badge">Idle</span>
+      </div>
+      <div style="padding:12px 14px;display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+        <div style="background:var(--surface-2);border-radius:8px;padding:10px 12px;">
+          <div class="kpi-label">Peak RPS</div>
+          <div class="kpi-val" style="font-size:20px;" id="s-peak-rps">—</div>
+        </div>
+        <div style="background:var(--surface-2);border-radius:8px;padding:10px 12px;">
+          <div class="kpi-label">Median latency</div>
+          <div class="kpi-val" style="font-size:20px;" id="s-median">—</div>
+        </div>
+        <div style="background:var(--surface-2);border-radius:8px;padding:10px 12px;">
+          <div class="kpi-label">Total requests</div>
+          <div class="kpi-val" style="font-size:20px;" id="s-total">—</div>
+        </div>
+        <div style="background:var(--surface-2);border-radius:8px;padding:10px 12px;">
+          <div class="kpi-label">Total failures</div>
+          <div class="kpi-val" style="font-size:20px;" id="s-fail">—</div>
+        </div>
+        <div style="background:var(--surface-2);border-radius:8px;padding:10px 12px;">
+          <div class="kpi-label">p95 latency</div>
+          <div class="kpi-val" style="font-size:20px;" id="s-p95">—</div>
+        </div>
+        <div style="background:var(--surface-2);border-radius:8px;padding:10px 12px;">
+          <div class="kpi-label">p99 latency</div>
+          <div class="kpi-val" style="font-size:20px;" id="s-p99">—</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title">LATENCY DISTRIBUTION</span>
+        <span class="panel-sub">histogram of all response times</span>
+      </div>
+      <div id="plot-hist" class="plot-area" style="height:170px;"></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title">OBSERVATIONS</span>
+        <span class="log-count" id="obs-count">0</span>
+      </div>
+      <div style="padding:10px 14px;max-height:160px;overflow-y:auto;" id="obs-log">
+        <div style="font-size:11px;color:var(--text-dim);">
+          Observations will appear during the load test.
+        </div>
+      </div>
+    </div>
+
+    <div class="panel panel--log">
+      <div class="panel-header">
+        <span class="panel-title">LIVE REQUEST LOG</span>
+        <span class="log-count" id="req-count">0 requests</span>
+      </div>
+      <div class="log-body" id="req-log" style="max-height:180px;">
+        <div class="log-entry log-entry--idle">Awaiting requests...</div>
+      </div>
+    </div>
+
+  </div>
+
+</main>
+
+<script>
+// ── Infrastructure Simulation Layer ──────────────────────────────────────────
+const CAPACITY_PER_INST = 50;
+const RPS_PER_VU        = 2.5;
+const PROVISION_SEC     = 5;
+const BASE_SERVICE_MS   = 50;
+
+const infra = {
+  instances: 1,
+  provisioning: false,
+  provisionStart: 0,
+  overSatTicks: 0,
+  alertSent: false,
+  alertTicks: 0,
+  scaleEvents: [],
+};
+
+let currentActiveVU = 0;
+
+function getCapacity()    { return infra.instances * CAPACITY_PER_INST; }
+function getIntendedRps() { return currentActiveVU * RPS_PER_VU; }
+function getUtilization() { return getIntendedRps() / getCapacity(); }
+
+function queueMultiplier(rho) {
+  if (rho < 0.3)  return 1;
+  if (rho < 0.6)  return 1 + (rho - 0.3) * 2;
+  if (rho < 0.8)  return 1.6 + (rho - 0.6) * 5;
+  if (rho < 0.95) return 2.6 + (rho - 0.8) * 20;
+  if (rho < 1.1)  return 5.6 + (rho - 0.95) * 40;
+  return 12 + (rho - 1.1) * 8 + Math.random() * 5;
+}
+
+function injectedErrorRate(rho) {
+  if (rho < 0.85) return 0;
+  if (rho < 0.95) return 0.03;
+  if (rho < 1.05) return 0.08;
+  if (rho < 1.2)  return 0.15;
+  return 0.25;
+}
+
+function infraAugment(realLat, realOk, realStatus) {
+  const rho  = getUtilization();
+  const mult = queueMultiplier(rho);
+  let simLat = Math.max(realLat, BASE_SERVICE_MS * mult + (Math.random() - 0.5) * 30);
+  if (infra.provisioning) simLat *= 1.4;
+  simLat += Math.random() * 15;
+
+  let simOk = realOk;
+  let simStatus = realStatus;
+  if (simOk && Math.random() < injectedErrorRate(rho)) {
+    simOk = false;
+    simStatus = 503;
+  }
+  return { lat: simLat, ok: simOk, status: simStatus };
+}
+
+function infraTick() {
+  const rho = getUtilization();
+
+  if (infra.provisioning) {
+    const elapsed = (Date.now() - infra.provisionStart) / 1000;
+    if (elapsed >= PROVISION_SEC) {
+      infra.provisioning = false;
+      infra.instances = 2;
+      infra.overSatTicks = 0;
+      infra.scaleEvents.push({ ts: TS[TS.length-1] || '', type: 'scaled', instances: 2 });
+      monObs('✓', `Auto-scaled to 2 instances — capacity doubled to ${getCapacity()} RPS`, 'var(--green)');
+      const el = document.getElementById('kpi-inst');
+      el.textContent = '2'; el.classList.remove('inst-blink');
+      document.getElementById('kpi-inst-sub').textContent = 'running';
+    }
+    return;
+  }
+
+  if (infra.instances < 2 && rho > 0.80) {
+    infra.overSatTicks++;
+    if (infra.overSatTicks >= 3) {
+      infra.provisioning = true;
+      infra.provisionStart = Date.now();
+      infra.overSatTicks = 0;
+      infra.scaleEvents.push({ ts: TS[TS.length-1] || '', type: 'provision' });
+      monObs('↑', `Capacity utilization at ${(rho*100).toFixed(0)}% — provisioning instance 2...`, 'var(--amber)');
+      const el = document.getElementById('kpi-inst');
+      el.textContent = '1→2'; el.classList.add('inst-blink');
+      document.getElementById('kpi-inst-sub').textContent = 'provisioning...';
+    }
+  } else if (infra.instances < 2) {
+    infra.overSatTicks = Math.max(0, infra.overSatTicks - 1);
+  }
+
+  if (infra.instances >= 2 && rho > 1.0) {
+    infra.alertTicks++;
+    if (infra.alertTicks >= 3 && !infra.alertSent) {
+      infra.alertSent = true;
+      infra.scaleEvents.push({ ts: TS[TS.length-1] || '', type: 'alert' });
+      monObs('⚠', `ALERT: All ${infra.instances} instances saturated at ${(rho*100).toFixed(0)}% — Slack alert sent`, 'var(--red)');
+      sendSlackAlert();
+    }
+  } else {
+    infra.alertTicks = Math.max(0, infra.alertTicks - 1);
+  }
+}
+
+// ── Auto-Demo Phases ─────────────────────────────────────────────────────────
+const PHASES = [
+  { name: 'Light',  vu: 5,   sec: 15, color: '#1D9E75' },
+  { name: 'Medium', vu: 20,  sec: 20, color: '#BA7517' },
+  { name: 'Heavy',  vu: 40,  sec: 22, color: '#7F77DD' },
+  { name: 'Stress', vu: 70,  sec: 18, color: '#E24B4A' },
+];
+const TOTAL_DURATION = PHASES.reduce((s, p) => s + p.sec, 0);
+
+let currentPhaseIdx = -1;
+
+function updatePhaseIndicator(idx) {
+  document.querySelectorAll('.phase-step').forEach((el, i) => {
+    el.classList.remove('active', 'done');
+    if (i < idx) el.classList.add('done');
+    else if (i === idx) el.classList.add('active');
+  });
+}
+
+// ── State ────────────────────────────────────────────────────────────────────
+let monRunning       = false;
+let monModelReady    = false;
+let monStartTime     = null;
+let monWorkerTimers  = [];
+let monWindowBucket  = [];
+let monAllLatencies  = [];
+let monTotalReqs     = 0;
+let monTotalFails    = 0;
+let monObsCount      = 0;
+let monReqDisplay    = 0;
+let monPrevP99       = 0;
+let monPrevErrPct    = 0;
+let monPrevRps       = 0;
+
+const MAX_PTS = 200;
+const TS=[], RPS=[], P50=[], P95=[], P99=[], ERR=[];
+const SC_INST=[], SC_CAP=[];
+
+const SAMPLES=[
+  [9.1,0.0,11.0,44.0,18.2,0.0,3.1,0.0,14.6],
+  [10.8,0.0,12.1,29.8,17.9,0.0,1.6,20.5,7.2],
+  [9.5,0.0,10.6,22.8,18.0,0.0,1.0,0.0,38.1],
+  [4.3,3.7,16.8,37.4,12.0,0.0,0.4,0.0,25.4],
+  [7.2,0.4,18.4,51.2,18.9,0.0,0.4,0.0,3.5],
+  [8.7,0.0,6.5,45.5,22.7,0.0,1.6,0.0,14.9],
+  [7.4,0.0,13.2,29.8,13.3,0.0,0.6,21.8,14.0],
+  [4.4,0.0,3.2,9.8,14.5,0.0,0.1,18.9,49.0],
+];
+
+// ── Plotly ───────────────────────────────────────────────────────────────────
+function monTheme(){
+  const d=document.documentElement.getAttribute('data-theme')==='dark';
+  return{paper:'rgba(0,0,0,0)',plot:'rgba(0,0,0,0)',
+         grid:d?'#1e2233':'#e5e7ef',text:d?'#6b7394':'#8890aa'};
+}
+function monLayout(yl,ex){
+  const t=monTheme();
+  return{paper_bgcolor:t.paper,plot_bgcolor:t.plot,
+    font:{family:"'DM Mono',monospace",color:t.text,size:10},
+    xaxis:{gridcolor:t.grid,zeroline:false,color:t.text,...(ex?.xaxis||{})},
+    yaxis:{gridcolor:t.grid,zeroline:false,color:t.text,
+           title:{text:yl,font:{size:10}},...(ex?.yaxis||{})},
+    margin:{l:46,r:12,t:8,b:34},showlegend:true,
+    legend:{bgcolor:'rgba(0,0,0,0)',font:{size:9},x:0,y:1},...(ex||{})};
+}
+const MCFG={displayModeBar:false,responsive:true};
+
+function monInitPlots(){
+  // Scaling Timeline (dual Y)
+  Plotly.newPlot('plot-scale',[
+    {x:[],y:[],name:'RPS',type:'scatter',mode:'lines',fill:'tozeroy',
+     fillcolor:'rgba(127,119,221,0.12)',line:{color:'#7F77DD',width:2}},
+    {x:[],y:[],name:'Capacity',type:'scatter',mode:'lines',
+     line:{color:'#3ecf8e',width:1.5,dash:'dash'}},
+    {x:[],y:[],name:'Instances',type:'scatter',mode:'lines',
+     line:{color:'#3ecf8e',width:3,shape:'hv'},yaxis:'y2'},
+  ],{...monLayout('req/s',{
+    yaxis2:{overlaying:'y',side:'right',range:[0,3.5],dtick:1,
+            title:{text:'instances',font:{size:10}},
+            gridcolor:'rgba(0,0,0,0)',zeroline:false},
+    margin:{l:46,r:46,t:8,b:34},
+  })},MCFG);
+
+  // Latency percentiles
+  Plotly.newPlot('plot-lat',[
+    {x:[],y:[],name:'p50',type:'scatter',mode:'lines',line:{color:'#1D9E75',width:2}},
+    {x:[],y:[],name:'p95',type:'scatter',mode:'lines',line:{color:'#BA7517',width:1.8,dash:'dot'}},
+    {x:[],y:[],name:'p99',type:'scatter',mode:'lines',line:{color:'#E24B4A',width:1.8,dash:'dash'}},
+  ],monLayout('ms'),MCFG);
+
+  // Error rate
+  Plotly.newPlot('plot-err',[
+    {x:[],y:[],name:'error %',type:'bar',marker:{color:[]},width:0.6},
+  ],{...monLayout('error %'),
+    shapes:[{type:'line',xref:'paper',x0:0,x1:1,y0:1,y1:1,
+             line:{color:'#E24B4A',width:1,dash:'dot'}}]},MCFG);
+
+  // Histogram
+  Plotly.newPlot('plot-hist',[
+    {x:[],type:'histogram',marker:{color:'#7F77DD',opacity:0.8},xbins:{size:25}},
+  ],{...monLayout('count',{xaxis:{title:{text:'latency (ms)',font:{size:10}}}}),
+    bargap:0.05,margin:{l:44,r:10,t:8,b:38}},MCFG);
+}
+
+// ── Percentile ───────────────────────────────────────────────────────────────
+function monPct(arr,p){
+  if(!arr.length)return 0;
+  const s=[...arr].sort((a,b)=>a-b);
+  return s[Math.min(Math.floor(s.length*p/100),s.length-1)];
+}
+
+// ── Single request (with infrastructure augmentation) ────────────────────────
+async function monFireReq(){
+  const url=document.getElementById('cfg-url').value.trim().replace(/\/$/,'');
+  const features=SAMPLES[Math.floor(Math.random()*SAMPLES.length)];
+  const t0=performance.now();
+  let status=0,ok=false;
+  try{
+    const r=await fetch(`${url}/api/predict`,{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({features}),
+    });
+    status=r.status; ok=(r.status===200);
+  }catch(e){status=0;ok=false;}
+  const realLat=performance.now()-t0;
+
+  const sim = infraAugment(realLat, ok, status);
+  if(!sim.ok) monTotalFails++;
+  monTotalReqs++;
+  monWindowBucket.push({lat:sim.lat, ok:sim.ok, status:sim.status});
+  monAllLatencies.push(sim.lat);
+  monLogReq(sim.status, sim.lat);
+}
+
+// ── Virtual user ─────────────────────────────────────────────────────────────
+function monSleep(ms){return new Promise(r=>setTimeout(r,ms));}
+async function monWorker(){
+  while(monRunning){
+    await monFireReq();
+    await monSleep(80+Math.random()*120);
+  }
+}
+
+// ── Aggregate every second ───────────────────────────────────────────────────
+function monAggregate(){
+  const w=monWindowBucket.splice(0);
+  if(!w.length)return;
+  const now=new Date().toLocaleTimeString('en-GB',{hour12:false});
+  const lats=w.map(r=>r.lat);
+  const failed=w.filter(r=>!r.ok).length;
+  const errPct=(failed/w.length*100);
+  const curRps=w.length;
+  const curP50=monPct(lats,50);
+  const curP95=monPct(lats,95);
+  const curP99=monPct(lats,99);
+
+  [TS,RPS,P50,P95,P99,ERR,SC_INST,SC_CAP].forEach(a=>{if(a.length>=MAX_PTS)a.shift();});
+  TS.push(now); RPS.push(curRps);
+  P50.push(+curP50.toFixed(0)); P95.push(+curP95.toFixed(0)); P99.push(+curP99.toFixed(0));
+  ERR.push(+errPct.toFixed(2));
+  SC_INST.push(infra.instances);
+  SC_CAP.push(getCapacity());
+
+  // Infrastructure tick
+  infraTick();
+
+  // Update capacity KPI
+  const rho = getUtilization();
+  const capEl = document.getElementById('kpi-cap');
+  const capPct = Math.round(rho * 100);
+  capEl.textContent = capPct + '%';
+  capEl.style.color = rho > 1 ? 'var(--red)' : rho > 0.8 ? 'var(--amber)' : 'var(--green)';
+
+  // Scaling timeline
+  Plotly.restyle('plot-scale',{x:[TS,TS,TS],y:[RPS,SC_CAP,SC_INST]},[0,1,2]);
+
+  // Latency
+  Plotly.restyle('plot-lat',{x:[TS,TS,TS],y:[P50,P95,P99]},[0,1,2]);
+
+  // Error bars
+  const ec=ERR.map(v=>v===0?'rgba(29,158,117,.6)':v<1?'rgba(186,117,23,.7)':'rgba(224,74,74,.75)');
+  Plotly.restyle('plot-err',{x:[TS],y:[ERR],'marker.color':[ec]},[0]);
+
+  // Histogram
+  Plotly.restyle('plot-hist',{x:[monAllLatencies]},[0]);
+
+  // KPI cards
+  monKpi('kpi-rps',curRps,'live');
+  monKpi('kpi-p50',curP50.toFixed(0),'ms');
+  monKpi('kpi-p99',curP99.toFixed(0),'ms',
+    curP99>500?'var(--red)':curP99>200?'var(--amber)':null);
+  monKpi('kpi-err',errPct.toFixed(2),'%',
+    errPct>1?'var(--red)':errPct>0?'var(--amber)':'var(--green)');
+
+  document.getElementById('hdr-total').textContent=monTotalReqs.toLocaleString();
+  document.getElementById('hdr-fail').textContent=monTotalFails.toLocaleString();
+
+  const pill=document.getElementById('pill-health');
+  if(errPct>5){pill.className='pill drifting';pill.textContent='DEGRADED';}
+  else if(errPct>0){pill.className='pill';pill.style.borderColor='var(--amber)';pill.style.color='var(--amber)';pill.textContent='WARNING';}
+  else{pill.className='pill ok';pill.textContent='RUNNING';}
+
+  document.getElementById('s-peak-rps').textContent=Math.max(...RPS).toFixed(0)+' req/s';
+  document.getElementById('s-median').textContent=monPct(monAllLatencies,50).toFixed(0)+' ms';
+  document.getElementById('s-total').textContent=monTotalReqs.toLocaleString();
+  document.getElementById('s-fail').textContent=monTotalFails.toLocaleString();
+  document.getElementById('s-p95').textContent=monPct(monAllLatencies,95).toFixed(0)+' ms';
+  document.getElementById('s-p99').textContent=monPct(monAllLatencies,99).toFixed(0)+' ms';
+
+  monAutoObserve(curRps,curP99,errPct);
+  monPrevRps=curRps; monPrevP99=curP99; monPrevErrPct=errPct;
+}
+
+function monKpi(id,val,sub,color){
+  const el=document.getElementById(id);
+  el.textContent=val;
+  el.style.color=color||'var(--text-bright)';
+}
+
+// ── Auto observations ────────────────────────────────────────────────────────
+function monAutoObserve(curRps,curP99,errPct){
+  if(curP99>500&&monPrevP99<=500)
+    monObs('▲','p99 latency exceeded 500ms — server under pressure','var(--amber)');
+  if(curP99>1000&&monPrevP99<=1000)
+    monObs('▲','p99 latency exceeded 1000ms — severe degradation','var(--red)');
+  if(errPct>1&&monPrevErrPct<=1)
+    monObs('⚠','Error rate crossed 1% — requests being dropped','var(--red)');
+  if(errPct>10&&monPrevErrPct<=10)
+    monObs('⚠','Error rate exceeded 10% — critical service degradation','var(--red)');
+}
+
+function monObs(icon,text,color){
+  monObsCount++;
+  document.getElementById('obs-count').textContent=monObsCount;
+  const log=document.getElementById('obs-log');
+  if(monObsCount===1)log.innerHTML='';
+  const ts=new Date().toLocaleTimeString('en-GB',{hour12:false});
+  const el=document.createElement('div');
+  el.className='obs-event';
+  el.style.borderColor=`color-mix(in srgb,${color} 40%,transparent)`;
+  el.innerHTML=`<span class="obs-icon" style="color:${color}">${icon}</span>
+    <span class="obs-text">${text}</span>
+    <span class="obs-ts">${ts}</span>`;
+  log.prepend(el);
+}
+
+// ── Request log ──────────────────────────────────────────────────────────────
+function monLogReq(status,lat){
+  monReqDisplay++;
+  document.getElementById('req-count').textContent=
+    `${monTotalReqs.toLocaleString()} requests`;
+  if(monReqDisplay%4!==0)return;
+  const body=document.getElementById('req-log');
+  if(monReqDisplay===4)body.innerHTML='';
+  const sc=status===200?'s200':status===0?'s5xx':status<500?'s4xx':'s5xx';
+  const lc=lat<100?'latok':lat<300?'latwarn':'latbad';
+  const st=status===0?'ERR':status;
+  const t=new Date().toLocaleTimeString('en-GB',{hour12:false});
+  const row=document.createElement('div');
+  row.className='req-row';
+  row.innerHTML=`<span class="log-ts">${t}</span>
+    <span class="rm">POST</span>
+    <span class="rp">/api/predict</span>
+    <span class="rs ${sc}">${st}</span>
+    <span class="rl ${lc}">${lat.toFixed(0)}ms</span>`;
+  body.prepend(row);
+  while(body.children.length>60)body.removeChild(body.lastChild);
+}
+
+// ── Init model ───────────────────────────────────────────────────────────────
+async function monInitModel(){
+  const url=document.getElementById('cfg-url').value.trim().replace(/\/$/,'');
+  document.getElementById('mon-btn-init').disabled=true;
+  monSetStatus('Pinging server...');
+
+  try{ await fetch(`${url}/api/status`); }catch(_){}
+
+  monSetStatus('Initialising model — loading data and fitting PCA...');
+
+  const controller=new AbortController();
+  const tid=setTimeout(()=>controller.abort(),120000);
+  try{
+    const r=await fetch(`${url}/api/initialize`,{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        feature_x:'gas',feature_y:'forecast_intensity',
+        ks_threshold:0.10,n_init:10,n_monthly:3,speed:0.0,
+      }),
+      signal:controller.signal,
+    });
+    clearTimeout(tid);
+    if(!r.ok)throw new Error(`Server returned ${r.status}`);
+    const j=await r.json();
+    if(!j.data?.pc1_range)throw new Error('Unexpected response shape');
+    monModelReady=true;
+    monSetStatus('Model ready — click Load Test to begin');
+    document.getElementById('mon-btn-start').disabled=false;
+    document.getElementById('mon-btn-reset').disabled=false;
+    monObs('✓',`Model initialised at ${url}`,'var(--green)');
+  }catch(e){
+    clearTimeout(tid);
+    const msg=e.name==='AbortError'?'Timed out after 120s':e.message;
+    monSetStatus(`Init failed: ${msg} — try again`);
+    document.getElementById('mon-btn-init').disabled=false;
+    monObs('✗',`Init failed: ${msg}`,'var(--red)');
+  }
+}
+
+// ── Automated Load Test ──────────────────────────────────────────────────────
+async function startLoadTest(){
+  if(!monModelReady){
+    await monInitModel();
+    if(!monModelReady) return;
+  }
+
+  monRunning = true;
+  monStartTime = Date.now();
+  document.getElementById('mon-btn-start').disabled = true;
+  document.getElementById('mon-btn-stop').disabled = false;
+  document.getElementById('mon-btn-init').disabled = true;
+  document.getElementById('mon-btn-reset').disabled = true;
+
+  monObs('▶', `Automated load test started — ${PHASES.length} phases · ${TOTAL_DURATION}s`, 'var(--accent)');
+
+  const aggTimer = setInterval(monAggregate, 1000);
+  monWorkerTimers.push(aggTimer);
+
+  const progTimer = setInterval(() => {
+    if (!monStartTime) return;
+    const el = (Date.now() - monStartTime) / 1000;
+    document.getElementById('mon-progress').style.width =
+      Math.min(100, el / TOTAL_DURATION * 100) + '%';
+    document.getElementById('mon-elapsed').textContent =
+      `${el.toFixed(0)}s / ${TOTAL_DURATION}s`;
+  }, 500);
+  monWorkerTimers.push(progTimer);
+
+  let spawnedVU = 0;
+
+  for (let pi = 0; pi < PHASES.length; pi++) {
+    if (!monRunning) break;
+    const phase = PHASES[pi];
+    currentPhaseIdx = pi;
+    currentActiveVU = phase.vu;
+    updatePhaseIndicator(pi);
+
+    document.getElementById('profile-badge').textContent =
+      `Phase ${pi+1} · ${phase.name} · ${phase.vu} VU`;
+    monSetStatus(`Phase ${pi+1}/${PHASES.length}: ${phase.name} — ${phase.vu} virtual users`);
+    monObs('▶', `Phase ${pi+1}: ${phase.name} — ramping to ${phase.vu} virtual users`, phase.color);
+
+    const toSpawn = phase.vu - spawnedVU;
+    for (let i = 0; i < toSpawn; i++) {
+      const delay = Math.round(i * (3000 / Math.max(toSpawn, 1)));
+      const t = setTimeout(() => { if (monRunning) monWorker(); }, delay);
+      monWorkerTimers.push(t);
+    }
+    spawnedVU = phase.vu;
+
+    await new Promise(resolve => {
+      const t = setTimeout(resolve, phase.sec * 1000);
+      monWorkerTimers.push(t);
+    });
+  }
+
+  if (monRunning) {
+    updatePhaseIndicator(PHASES.length);
+    monStopTest();
+  }
+}
+
+// ── Stop ─────────────────────────────────────────────────────────────────────
+function monStopTest(){
+  monRunning = false;
+  monWorkerTimers.forEach(t => { clearTimeout(t); clearInterval(t); });
+  monWorkerTimers = [];
+  document.getElementById('mon-btn-start').disabled = false;
+  document.getElementById('mon-btn-stop').disabled = true;
+  document.getElementById('mon-btn-reset').disabled = false;
+  document.getElementById('mon-progress').style.width = '100%';
+  const pill = document.getElementById('pill-health');
+  pill.className = 'pill'; pill.textContent = 'DONE';
+  pill.style.borderColor = ''; pill.style.color = '';
+  const dur = monStartTime ? ((Date.now() - monStartTime) / 1000).toFixed(0) : '0';
+  monSetStatus(`Complete — ${dur}s · ${monTotalReqs.toLocaleString()} requests · ${monTotalFails} failures`);
+  if (monAllLatencies.length)
+    monObs('⏹',
+      `Done. Peak ${Math.max(...RPS)} req/s · p50 ${monPct(monAllLatencies,50).toFixed(0)}ms · p99 ${monPct(monAllLatencies,99).toFixed(0)}ms · ${infra.instances} instances`,
+      'var(--text-dim)');
+}
+
+// ── Reset ────────────────────────────────────────────────────────────────────
+function monResetAll(){
+  monStopTest();
+  [TS,RPS,P50,P95,P99,ERR,SC_INST,SC_CAP].forEach(a=>a.length=0);
+  monAllLatencies.length=0; monWindowBucket.length=0;
+  monTotalReqs=monTotalFails=monObsCount=monReqDisplay=0;
+  monPrevRps=monPrevP99=monPrevErrPct=0; monModelReady=false;
+  currentActiveVU=0; currentPhaseIdx=-1;
+
+  infra.instances=1; infra.provisioning=false; infra.overSatTicks=0;
+  infra.alertSent=false; infra.alertTicks=0; infra.scaleEvents=[];
+
+  ['plot-scale','plot-lat','plot-err','plot-hist'].forEach(id=>{
+    try{Plotly.purge(id);}catch(_){}
+  });
+  monInitPlots();
+
+  ['kpi-rps','kpi-p50','kpi-p99','kpi-err',
+   's-peak-rps','s-median','s-total','s-fail','s-p95','s-p99'].forEach(id=>{
+    document.getElementById(id).textContent='—';
+  });
+  document.getElementById('kpi-inst').textContent='1';
+  document.getElementById('kpi-inst').classList.remove('inst-blink');
+  document.getElementById('kpi-inst-sub').textContent='running';
+  document.getElementById('kpi-cap').textContent='0%';
+  document.getElementById('kpi-cap').style.color='var(--text-bright)';
+  document.getElementById('hdr-total').textContent='0';
+  document.getElementById('hdr-fail').textContent='0';
+  document.getElementById('req-log').innerHTML=
+    '<div class="log-entry log-entry--idle">Awaiting requests...</div>';
+  document.getElementById('obs-log').innerHTML=
+    '<div style="font-size:11px;color:var(--text-dim);">Observations will appear during the load test.</div>';
+  document.getElementById('obs-count').textContent='0';
+  document.getElementById('req-count').textContent='0 requests';
+  document.getElementById('mon-progress').style.width='0%';
+  document.getElementById('mon-elapsed').textContent='';
+  document.getElementById('pill-health').className='pill ok';
+  document.getElementById('pill-health').textContent='READY';
+  document.getElementById('pill-health').style.borderColor='';
+  document.getElementById('pill-health').style.color='';
+  document.getElementById('profile-badge').textContent='Idle';
+  document.getElementById('mon-btn-init').disabled=false;
+  document.getElementById('mon-btn-start').disabled=false;
+  document.getElementById('mon-btn-stop').disabled=true;
+  document.getElementById('mon-btn-reset').disabled=true;
+  updatePhaseIndicator(-1);
+  monSetStatus('Ready — click Load Test to begin automated demo');
+}
+
+// ── Slack Alert ──────────────────────────────────────────────────────────────
+async function sendSlackAlert(){
+  const url = document.getElementById('cfg-url').value.trim().replace(/\/$/,'');
+  try {
+    await fetch(`${url}/api/alert/infrastructure`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        instances:    infra.instances,
+        utilization:  Math.round(getUtilization() * 100),
+        rps:          RPS.length ? RPS[RPS.length-1] : 0,
+        error_rate:   ERR.length ? ERR[ERR.length-1] : 0,
+        p99:          P99.length ? P99[P99.length-1] : 0,
+        virtual_users: currentActiveVU,
+        message:      `All ${infra.instances} instances at ${Math.round(getUtilization()*100)}% capacity. Error rate rising. Manual scale-up or traffic shedding recommended.`,
+      }),
+    });
+  } catch (_) {}
+}
+
+function monSetStatus(msg){
+  document.getElementById('mon-status').textContent=msg;
+}
+
+// ── Theme toggle ─────────────────────────────────────────────────────────────
+document.getElementById('mon-theme-toggle').addEventListener('click',()=>{
+  const h=document.documentElement;
+  const d=h.getAttribute('data-theme')==='dark';
+  h.setAttribute('data-theme',d?'light':'dark');
+  document.getElementById('mon-theme-icon').textContent=d?'☽':'☀';
+  const u={paper_bgcolor:'rgba(0,0,0,0)',plot_bgcolor:'rgba(0,0,0,0)'};
+  ['plot-scale','plot-lat','plot-err','plot-hist'].forEach(id=>{
+    try{Plotly.relayout(id,u);}catch(_){}
+  });
+});
+
+// ── Boot ─────────────────────────────────────────────────────────────────────
+window.addEventListener('load',()=>{
+  monInitPlots();
+  monSetStatus('Ready — click Load Test to begin automated demo');
+});
+</script>
+</body>
+</html>

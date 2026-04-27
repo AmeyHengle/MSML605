@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CarbonWatch — Carbon Intensity Dashboard</title>
+<link rel="stylesheet" href="style.css">
+<script src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-left">
+    <span class="logo-mark">◈</span>
+    <span class="logo-text">CarbonWatch</span>
+  </div>
+  <nav class="topbar-nav">
+    <a href="index.html" class="nav-link nav-link--active">Dashboard</a>
+    <a href="simulation.html" class="nav-link">Simulation</a>
+    <a href="monitoring.html" class="nav-link">Monitor</a>
+  </nav>
+  <div class="topbar-right">
+    <button class="theme-toggle" id="theme-toggle" title="Toggle light / dark">
+      <span id="theme-icon">☀</span>
+    </button>
+  </div>
+</header>
+
+<main class="dash">
+
+  <section class="dash-hero">
+    <div class="dash-hero-label">Current Carbon Intensity Forecast</div>
+    <div class="dash-hero-card" id="hero-card">
+      <div class="dash-hero-value" id="hero-value">—</div>
+      <div class="dash-hero-unit">gCO<sub>2</sub>/kWh</div>
+      <div class="dash-hero-index" id="hero-index">loading...</div>
+    </div>
+    <div class="dash-hero-sub">
+      Predicted by linear regression model trained on all historical generation mix data
+    </div>
+  </section>
+
+  <section class="dash-charts">
+    <div class="panel dash-chart-main">
+      <div class="panel-header">
+        <span class="panel-title">CARBON INTENSITY FORECAST</span>
+        <span class="panel-sub">Actual vs Predicted (last 48 data points)</span>
+      </div>
+      <div id="plot-forecast" style="height:340px;"></div>
+    </div>
+    <div class="panel dash-chart-side">
+      <div class="panel-header">
+        <span class="panel-title">GENERATION MIX</span>
+        <span class="panel-sub">Latest data point</span>
+      </div>
+      <div id="plot-genmix" style="height:340px;"></div>
+    </div>
+  </section>
+
+  <section class="dash-stats">
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title">MODEL PERFORMANCE</span>
+        <span class="panel-sub">Trained on full historical dataset</span>
+      </div>
+      <div class="dash-stats-grid">
+        <div class="dash-stat-card">
+          <div class="dash-stat-label">R² Score</div>
+          <div class="dash-stat-value" id="stat-r2">—</div>
+        </div>
+        <div class="dash-stat-card">
+          <div class="dash-stat-label">RMSE</div>
+          <div class="dash-stat-value" id="stat-rmse">—</div>
+          <div class="dash-stat-unit">gCO₂/kWh</div>
+        </div>
+        <div class="dash-stat-card">
+          <div class="dash-stat-label">Training Samples</div>
+          <div class="dash-stat-value" id="stat-samples">—</div>
+        </div>
+        <div class="dash-stat-card">
+          <div class="dash-stat-label">Features</div>
+          <div class="dash-stat-value" id="stat-features">—</div>
+        </div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title">FEATURE IMPORTANCE</span>
+        <span class="panel-sub">Relative contribution to prediction</span>
+      </div>
+      <div id="plot-importance" style="height:220px;"></div>
+    </div>
+  </section>
+
+</main>
+
+<script>
+const API = 'https://msml605.onrender.com';
+
+const INTENSITY_COLORS = {
+  'very low':  '#7CBB00',
+  'low':       '#FFD500',
+  'moderate':  '#FF9500',
+  'high':      '#FF3A00',
+  'very high': '#C00000',
+};
+
+function themeColors() {
+  const s = getComputedStyle(document.documentElement);
+  return {
+    bg:      s.getPropertyValue('--bg').trim(),
+    surface: s.getPropertyValue('--surface').trim(),
+    text:    s.getPropertyValue('--text').trim(),
+    textDim: s.getPropertyValue('--text-dim').trim(),
+    accent:  s.getPropertyValue('--accent').trim(),
+    border:  s.getPropertyValue('--border').trim(),
+    grid:    s.getPropertyValue('--border').trim(),
+  };
+}
+
+function plotLayout(title, extra) {
+  const c = themeColors();
+  return Object.assign({
+    paper_bgcolor: c.bg,
+    plot_bgcolor:  c.surface,
+    font: { family: 'DM Mono, monospace', size: 11, color: c.text },
+    margin: { l: 50, r: 20, t: 30, b: 40 },
+    xaxis: { gridcolor: c.grid, zerolinecolor: c.grid },
+    yaxis: { gridcolor: c.grid, zerolinecolor: c.grid },
+    title: { text: title || '', font: { size: 12, color: c.textDim } },
+  }, extra || {});
+}
+
+async function loadDashboard() {
+  try {
+    const resp = await fetch(API + '/api/dashboard');
+    if (!resp.ok) throw new Error('API returned ' + resp.status);
+    const data = await resp.json();
+    renderHero(data);
+    renderForecast(data.forecast_trend);
+    renderGenMix(data.generation_mix);
+    renderStats(data.model_stats);
+    renderImportance(data.model_stats.feature_importance);
+  } catch (err) {
+    document.getElementById('hero-value').textContent = '!';
+    document.getElementById('hero-index').textContent = 'Failed to load data';
+    console.error('Dashboard load error:', err);
+  }
+}
+
+function renderHero(data) {
+  const val = data.predicted_intensity;
+  const idx = data.intensity_index;
+  const color = INTENSITY_COLORS[idx] || '#999';
+
+  document.getElementById('hero-value').textContent = val.toFixed(0);
+  const indexEl = document.getElementById('hero-index');
+  indexEl.textContent = idx.toUpperCase();
+  indexEl.style.color = color;
+  indexEl.style.borderColor = color;
+
+  const card = document.getElementById('hero-card');
+  card.style.borderColor = color;
+  card.style.boxShadow = '0 0 40px -10px ' + color + '66';
+}
+
+function renderForecast(trend) {
+  const c = themeColors();
+  const traces = [
+    {
+      x: trend.timestamps, y: trend.actual,
+      name: 'Actual', mode: 'lines',
+      line: { color: '#FF9500', width: 2 },
+    },
+    {
+      x: trend.timestamps, y: trend.predicted,
+      name: 'Predicted', mode: 'lines',
+      line: { color: c.accent, width: 2, dash: 'dot' },
+    },
+  ];
+  const layout = plotLayout('', {
+    xaxis: { gridcolor: c.grid, zerolinecolor: c.grid, type: 'date' },
+    yaxis: { gridcolor: c.grid, zerolinecolor: c.grid, title: 'gCO₂/kWh' },
+    legend: { orientation: 'h', y: 1.12, x: 0.5, xanchor: 'center' },
+    margin: { l: 55, r: 20, t: 40, b: 50 },
+  });
+  Plotly.newPlot('plot-forecast', traces, layout, { responsive: true });
+}
+
+function renderGenMix(mix) {
+  const c = themeColors();
+  const labels = Object.keys(mix);
+  const values = Object.values(mix);
+  const fuelColors = [
+    '#66BB6A', '#555555', '#AB47BC', '#FF7043',
+    '#FFA726', '#78909C', '#29B6F6', '#FFEE58', '#26A69A'
+  ];
+
+  const trace = {
+    labels: labels, values: values,
+    type: 'pie', hole: 0.5,
+    marker: { colors: fuelColors },
+    textinfo: 'label+percent',
+    textfont: { size: 10, family: 'DM Mono, monospace' },
+    hoverinfo: 'label+value+percent',
+  };
+  const layout = plotLayout('', {
+    showlegend: false,
+    margin: { l: 10, r: 10, t: 10, b: 10 },
+  });
+  Plotly.newPlot('plot-genmix', [trace], layout, { responsive: true });
+}
+
+function renderStats(stats) {
+  document.getElementById('stat-r2').textContent = stats.r2.toFixed(4);
+  document.getElementById('stat-rmse').textContent = stats.rmse.toFixed(2);
+  document.getElementById('stat-samples').textContent = stats.training_samples.toLocaleString();
+  document.getElementById('stat-features').textContent = stats.features;
+}
+
+function renderImportance(fi) {
+  const c = themeColors();
+  const labels = Object.keys(fi).reverse();
+  const vals = Object.values(fi).reverse();
+
+  const trace = {
+    y: labels, x: vals,
+    type: 'bar', orientation: 'h',
+    marker: { color: c.accent + 'cc', line: { color: c.accent, width: 1 } },
+    hovertemplate: '%{y}: %{x:.4f}<extra></extra>',
+  };
+  const layout = plotLayout('', {
+    xaxis: { gridcolor: c.grid, zerolinecolor: c.grid, title: 'Relative importance' },
+    yaxis: { gridcolor: c.grid, zerolinecolor: c.grid, automargin: true },
+    margin: { l: 80, r: 20, t: 10, b: 40 },
+  });
+  Plotly.newPlot('plot-importance', [trace], layout, { responsive: true });
+}
+
+function reapplyTheme() {
+  const plots = ['plot-forecast', 'plot-genmix', 'plot-importance'];
+  const c = themeColors();
+  plots.forEach(id => {
+    const el = document.getElementById(id);
+    if (el && el.data) {
+      Plotly.relayout(id, {
+        paper_bgcolor: c.bg, plot_bgcolor: c.surface,
+        'font.color': c.text,
+        'xaxis.gridcolor': c.grid, 'yaxis.gridcolor': c.grid,
+      });
+    }
+  });
+}
+
+document.getElementById('theme-toggle').addEventListener('click', () => {
+  const html = document.documentElement;
+  const next = html.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+  html.setAttribute('data-theme', next);
+  document.getElementById('theme-icon').textContent = next === 'dark' ? '☀' : '☾';
+  reapplyTheme();
+});
+
+loadDashboard();
+</script>
+</body>
+</html>
