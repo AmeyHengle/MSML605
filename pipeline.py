@@ -232,7 +232,15 @@ class PipelineState:
 
     def _eval(self, X: np.ndarray, y: np.ndarray):
         y_pred = self.model.predict(X)
-        return float(r2_score(y, y_pred)), compute_rmse(y, y_pred), y_pred
+        r2 = float(r2_score(y, y_pred))
+        rmse = float(compute_rmse(y, y_pred))
+        # Daily windows can be degenerate (e.g. near-constant target), which can
+        # make sklearn metrics non-finite. Keep API contract stable for clients/tests.
+        if not np.isfinite(r2):
+            r2 = 0.0
+        if not np.isfinite(rmse):
+            rmse = 0.0
+        return r2, rmse, y_pred
 
     def _plot_sample(self, X: np.ndarray, y: np.ndarray,
                      y_pred: np.ndarray, n: int) -> dict:
