@@ -2,6 +2,7 @@
 import asyncio
 import json
 import numpy as np
+import os
 import subprocess
 import sys
 import threading
@@ -14,7 +15,12 @@ from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
+from reportlab.lib.pagesizes import letter
+from reportlab.lib.utils import simpleSplit
+from reportlab.pdfgen import canvas
 from pipeline import PipelineState, ENERGY_FEATURES
+import urllib.error
+import urllib.request
 
 try:
     from monitoring import get_current_metrics, cloudwatch_stream
@@ -46,6 +52,16 @@ _agent_job = {
     'error': None,
     'report_path': None,
     'logs': deque(maxlen=200),
+}
+_main_report_lock = threading.Lock()
+_main_report_job = {
+    'status': 'idle',
+    'generated_at': None,
+    'error': None,
+    'pdf_path': None,
+    'html_path': None,
+    'summary': None,
+    'report_data': None,
 }
 
 
@@ -134,6 +150,147 @@ class InitConfig(BaseModel):
 
 class PredictRequest(BaseModel):
     features: List[float]
+
+
+def _generate_main_pipeline_summary(report_data: dict) -> str:
+    api_key = os.getenv("GROQ_API_KEY", "").strip()
+    if not api_key:
+        return (
+            "Groq summary unavailable because GROQ_API_KEY is not configured. "
+            "Retrain event detected in main pipeline; review attached metrics and charts in the report."
+        )
+
+    body = {
+        "model": "llama-3.3-70b-versatile",
+        "temperature": 0.2,
+        "max_tokens": 700,
+        "messages": [
+            {
+                "role": "system",
+                "content": (
+                    "You are an ML product analyst. Produce a comprehensive summary for product stakeholders. "
+                    "Cover drift behavior, retrain trigger rationale, old/new model impact, risk, and next actions."
+                ),
+            },
+            {
+                "role": "user",
+                "content": json.dumps(report_data)[:14000],
+            },
+        ],
+    }
+    req = urllib.request.Request(
+        "https://api.groq.com/openai/v1/chat/completions",
+        data=json.dumps(body).encode("utf-8"),
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=25) as resp:
+            payload = json.loads(resp.read().decode("utf-8"))
+        choices = payload.get("choices") or []
+        if not choices:
+            raise RuntimeError("No choices returned")
+        out = (choices[0].get("message") or {}).get("content", "").strip()
+        if not out:
+            raise RuntimeError("Empty summary")
+        return out
+    except (urllib.error.URLError, TimeoutError, RuntimeError, json.JSONDecodeError):
+        return (
+            "Groq summary request failed. Retrain event detected in main pipeline; "
+            "use the attached metrics and report artifacts for review."
+        )
+
+
+def _write_pdf_report(pdf_path: Path, report_data: dict, summary: str) -> None:
+    pdf_path.parent.mkdir(parents=True, exist_ok=True)
+    c = canvas.Canvas(str(pdf_path), pagesize=letter)
+    width, height = letter
+    y = height - 40
+
+    def write_line(text: str, *, font="Helvetica", size=10, gap=14):
+        nonlocal y
+        c.setFont(font, size)
+        lines = simpleSplit(text, font, size, width - 72)
+        for ln in lines:
+            if y < 60:
+                c.showPage()
+                y = height - 40
+                c.setFont(font, size)
+            c.drawString(36, y, ln)
+            y -= gap
+
+    write_line("Main Pipeline Retrain Report", font="Helvetica-Bold", size=16, gap=20)
+    write_line(f"Generated at (UTC): {report_data.get('generated_at')}", font="Helvetica", size=9, gap=12)
+    write_line(f"Retrain period: {report_data.get('retrain_period')}", font="Helvetica", size=9, gap=12)
+    write_line(f"Model version: {report_data.get('model_version')}", font="Helvetica", size=9, gap=12)
+    write_line(f"KS at retrain: {report_data.get('ks_stat')}", font="Helvetica", size=9, gap=12)
+    write_line(f"PSI at retrain: {report_data.get('psi')}", font="Helvetica", size=9, gap=12)
+    write_line(f"R2 at retrain: {report_data.get('r2')}", font="Helvetica", size=9, gap=12)
+    write_line(f"RMSE at retrain: {report_data.get('rmse')}", font="Helvetica", size=9, gap=12)
+    y -= 6
+    write_line("Groq Comprehensive Summary", font="Helvetica-Bold", size=12, gap=16)
+    write_line(summary, font="Helvetica", size=10, gap=14)
+    y -= 4
+    write_line("Top Drift Features", font="Helvetica-Bold", size=11, gap=16)
+    for f in report_data.get("top_drift_features", []):
+        write_line(f"- {f}", font="Helvetica", size=10, gap=14)
+
+    c.save()
+
+
+def _build_main_report_html(report_data: dict, summary: str) -> str:
+    payload_json = json.dumps(report_data)
+    return f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Main Pipeline Retrain Report</title>
+  <script src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
+  <style>
+    body {{ font-family: Arial, sans-serif; margin: 24px; color: #1f2937; }}
+    .meta {{ color: #4b5563; margin-bottom: 8px; }}
+    .panel {{ border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px; margin-bottom: 14px; }}
+    .plot {{ height: 320px; }}
+  </style>
+</head>
+<body>
+  <h1>Main Pipeline Retrain Report</h1>
+  <div class="meta">Generated at: {report_data.get('generated_at')}</div>
+  <div class="meta">Retrain period: {report_data.get('retrain_period')}</div>
+  <div class="meta">Model version: {report_data.get('model_version')}</div>
+  <div class="panel">
+    <h3>Groq Summary</h3>
+    <p>{summary}</p>
+  </div>
+  <div class="panel">
+    <h3>Retrain Metrics</h3>
+    <p>KS: <strong>{report_data.get('ks_stat')}</strong> | PSI: <strong>{report_data.get('psi')}</strong></p>
+    <p>R2: <strong>{report_data.get('r2')}</strong> | RMSE: <strong>{report_data.get('rmse')}</strong></p>
+  </div>
+  <div class="panel"><h3>KS and PSI history</h3><div id="plot-drift" class="plot"></div></div>
+  <div class="panel"><h3>R2 and RMSE history</h3><div id="plot-performance" class="plot"></div></div>
+  <script>
+    const p = {payload_json};
+    Plotly.newPlot('plot-drift', [
+      {{ x: p.history.periods, y: p.history.ks, mode: 'lines+markers', name: 'KS' }},
+      {{ x: p.history.periods, y: p.history.psi, mode: 'lines+markers', name: 'PSI' }}
+    ], {{ margin: {{ t: 30 }} }}, {{ displayModeBar: false }});
+    Plotly.newPlot('plot-performance', [
+      {{ x: p.history.periods, y: p.history.r2, mode: 'lines+markers', name: 'R2' }},
+      {{ x: p.history.periods, y: p.history.rmse, mode: 'lines+markers', name: 'RMSE', yaxis: 'y2' }}
+    ], {{
+      margin: {{ t: 30 }},
+      yaxis: {{ title: 'R2' }},
+      yaxis2: {{ title: 'RMSE', overlaying: 'y', side: 'right' }}
+    }}, {{ displayModeBar: false }});
+  </script>
+</body>
+</html>
+"""
 
 
 # ── Pipeline routes ───────────────────────────────────────────────────────────
@@ -256,6 +413,129 @@ async def predict(req: PredictRequest):
     X    = np.array(req.features).reshape(1, -1)
     pred = float(_state.model.predict(X)[0])
     return {'forecast_intensity': round(pred, 2)}
+
+
+@app.post('/api/retrain-report/run')
+async def retrain_report_run():
+    cfg = InitConfig().model_dump()
+    state = PipelineState(cfg)
+    init_payload = state.initialize()
+
+    periods = []
+    ks_hist = []
+    psi_hist = []
+    r2_hist = []
+    rmse_hist = []
+    retrain_payload = None
+    for _ in range(len(state.days)):
+        tick = state.tick()
+        if tick is None:
+            break
+        periods.append(tick.get('month'))
+        ks_hist.append(tick.get('ks_stat'))
+        psi_hist.append(tick.get('psi'))
+        r2_hist.append(tick.get('r2'))
+        rmse_hist.append(tick.get('rmse'))
+        if tick.get('retrained'):
+            retrain_payload = tick
+            break
+
+    if retrain_payload is None:
+        return {'status': 'no_retrain', 'message': 'No retrain event observed in main pipeline simulation window.'}
+
+    top_drift = sorted(
+        (f for f, sev in (retrain_payload.get('drift_pills') or {}).items() if sev in {'high', 'critical'}),
+        key=lambda x: x,
+    )[:6]
+    report_data = {
+        'generated_at': _utc_now_iso(),
+        'init': {
+            'feature_x': init_payload.get('feature_x'),
+            'feature_y': init_payload.get('feature_y'),
+            'total_periods': init_payload.get('total_months'),
+        },
+        'retrain_period': retrain_payload.get('month'),
+        'model_version': retrain_payload.get('model_version'),
+        'ks_stat': retrain_payload.get('ks_stat'),
+        'psi': retrain_payload.get('psi'),
+        'r2': retrain_payload.get('r2'),
+        'rmse': retrain_payload.get('rmse'),
+        'top_drift_features': top_drift,
+        'ui_snapshot': {
+            'pca_x': retrain_payload.get('pca_x', []),
+            'pca_y': retrain_payload.get('pca_y', []),
+            'kde_ref_x': retrain_payload.get('kde_ref_x', []),
+            'kde_ref_y': retrain_payload.get('kde_ref_y', []),
+            'kde_cur_x': retrain_payload.get('kde_cur_x', []),
+            'kde_cur_y': retrain_payload.get('kde_cur_y', []),
+            'line_pc1': retrain_payload.get('new_line', {}).get('line_pc1') if retrain_payload.get('new_line') else [],
+            'line_y': retrain_payload.get('new_line', {}).get('line_y') if retrain_payload.get('new_line') else [],
+        },
+        'history': {
+            'periods': periods,
+            'ks': ks_hist,
+            'psi': psi_hist,
+            'r2': r2_hist,
+            'rmse': rmse_hist,
+        },
+    }
+    summary = _generate_main_pipeline_summary(report_data)
+
+    reports_dir = Path(os.getenv('REPORTS_DIR', Path(__file__).resolve().parent / 'reports'))
+    stem = f"main_retrain_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}"
+    html_path = reports_dir / f"{stem}.html"
+    pdf_path = reports_dir / f"{stem}.pdf"
+    html_path.parent.mkdir(parents=True, exist_ok=True)
+    html_path.write_text(_build_main_report_html(report_data, summary), encoding='utf-8')
+    _write_pdf_report(pdf_path, report_data, summary)
+
+    with _main_report_lock:
+        _main_report_job['status'] = 'succeeded'
+        _main_report_job['generated_at'] = report_data['generated_at']
+        _main_report_job['error'] = None
+        _main_report_job['pdf_path'] = str(pdf_path.resolve())
+        _main_report_job['html_path'] = str(html_path.resolve())
+        _main_report_job['summary'] = summary
+        _main_report_job['report_data'] = report_data
+
+    return {
+        'status': 'succeeded',
+        'generated_at': report_data['generated_at'],
+        'report_url_pdf': '/api/retrain-report/latest/pdf',
+        'report_url_html': '/api/retrain-report/latest/html',
+        'summary': summary,
+        'metrics': {
+            'ks_stat': report_data['ks_stat'],
+            'psi': report_data['psi'],
+            'r2': report_data['r2'],
+            'rmse': report_data['rmse'],
+            'top_drift_features': report_data['top_drift_features'],
+        },
+    }
+
+
+@app.get('/api/retrain-report/latest/pdf')
+async def retrain_report_latest_pdf():
+    with _main_report_lock:
+        pdf_path_raw = _main_report_job.get('pdf_path')
+    if not pdf_path_raw:
+        raise HTTPException(status_code=404, detail='No main-pipeline retrain PDF report generated yet')
+    pdf_path = Path(pdf_path_raw).resolve()
+    if not pdf_path.exists():
+        raise HTTPException(status_code=404, detail='PDF report file not found')
+    return FileResponse(str(pdf_path), media_type='application/pdf', filename=pdf_path.name)
+
+
+@app.get('/api/retrain-report/latest/html')
+async def retrain_report_latest_html():
+    with _main_report_lock:
+        html_path_raw = _main_report_job.get('html_path')
+    if not html_path_raw:
+        raise HTTPException(status_code=404, detail='No main-pipeline retrain HTML report generated yet')
+    html_path = Path(html_path_raw).resolve()
+    if not html_path.exists():
+        raise HTTPException(status_code=404, detail='HTML report file not found')
+    return FileResponse(str(html_path), media_type='text/html', filename=html_path.name)
 
 
 # ── Agent routes (background batch pipeline runner) ───────────────────────────
