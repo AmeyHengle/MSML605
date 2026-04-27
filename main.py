@@ -525,6 +525,9 @@ def _send_slack_report_notification(payload: dict) -> None:
     if not webhook:
         _log_report_event("warn", "slack_webhook_missing")
         return
+    channel = os.getenv("SLACK_CHANNEL_REPORTS", "").strip()
+    if channel:
+        payload["channel"] = channel
     req = urllib.request.Request(
         webhook,
         data=json.dumps(payload).encode("utf-8"),
@@ -1076,6 +1079,9 @@ async def retrain_report_debug():
             'env': {
                 'groq_api_key_set': bool(os.getenv("GROQ_API_KEY", "").strip()),
                 'slack_webhook_set': bool(os.getenv("SLACK_WEBHOOK_URL", "").strip()),
+                'slack_channel_cicd_set': bool(os.getenv("SLACK_CHANNEL_CICD", "").strip()),
+                'slack_channel_reports_set': bool(os.getenv("SLACK_CHANNEL_REPORTS", "").strip()),
+                'slack_channel_monitoring_set': bool(os.getenv("SLACK_CHANNEL_MONITORING", "").strip()),
                 'render_url_set': bool(os.getenv("RENDER_URL", "").strip()),
                 'reports_dir': str(Path(os.getenv('REPORTS_DIR', Path(__file__).resolve().parent / 'reports')).resolve()),
             },
@@ -1209,6 +1215,7 @@ async def infra_alert(request: Request):
     vu = body.get('virtual_users', 'n/a')
     msg = body.get('message', 'Service capacity exceeded')
 
+    channel = os.getenv("SLACK_CHANNEL_MONITORING", "").strip()
     payload = {
         'attachments': [{
             'color': '#E24B4A',
@@ -1242,6 +1249,8 @@ async def infra_alert(request: Request):
             ],
         }],
     }
+    if channel:
+        payload['channel'] = channel
 
     try:
         req = urllib.request.Request(

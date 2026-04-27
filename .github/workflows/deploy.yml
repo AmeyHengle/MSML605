@@ -121,6 +121,7 @@ jobs:
       - name: Send Slack failure alert
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          SLACK_CHANNEL: ${{ secrets.SLACK_CHANNEL_CICD }}
           COMMIT_SHA: ${{ github.sha }}
           COMMIT_MSG: ${{ github.event.head_commit.message }}
           COMMIT_AUTHOR: ${{ github.event.head_commit.author.name }}
@@ -129,10 +130,13 @@ jobs:
         run: |
           SHORT_SHA="${COMMIT_SHA:0:7}"
           SAFE_MSG=$(echo "$COMMIT_MSG" | sed 's/"/\\"/g' | head -c 120)
+          CHAN_FIELD=""
+          if [ -n "$SLACK_CHANNEL" ]; then CHAN_FIELD="\"channel\":\"$SLACK_CHANNEL\","; fi
 
           curl -s -X POST "$SLACK_WEBHOOK_URL" \
             -H 'Content-Type: application/json' \
             -d "{
+              ${CHAN_FIELD}
               \"attachments\": [{
                 \"color\": \"#E24B4A\",
                 \"blocks\": [
@@ -207,14 +211,18 @@ jobs:
       - name: Send Slack rollback confirmation
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          SLACK_CHANNEL: ${{ secrets.SLACK_CHANNEL_CICD }}
           FAILED_SHA: ${{ github.sha }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           BRANCH: ${{ github.ref_name }}
         run: |
           SHORT_SHA="${FAILED_SHA:0:7}"
+          CHAN_FIELD=""
+          if [ -n "$SLACK_CHANNEL" ]; then CHAN_FIELD="\"channel\":\"$SLACK_CHANNEL\","; fi
           curl -s -X POST "$SLACK_WEBHOOK_URL" \
             -H 'Content-Type: application/json' \
             -d "{
+              ${CHAN_FIELD}
               \"attachments\": [{
                 \"color\": \"#f5a623\",
                 \"blocks\": [
@@ -264,6 +272,7 @@ jobs:
         env:
           RENDER_URL: ${{ secrets.RENDER_URL }}
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          SLACK_CHANNEL_REPORTS: ${{ secrets.SLACK_CHANNEL_REPORTS }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           BRANCH: ${{ github.ref_name }}
         run: |
@@ -297,6 +306,7 @@ jobs:
           color = "#2eb67d" if retrain_found else "#f5a623"
           retrain_label = "true" if retrain_found else "false"
 
+          channel = os.environ.get("SLACK_CHANNEL_REPORTS", "").strip()
           payload = {
               "attachments": [{
                   "color": color,
@@ -342,6 +352,8 @@ jobs:
                   ],
               }]
           }
+          if channel:
+              payload["channel"] = channel
 
           req = urllib.request.Request(
               os.environ["SLACK_WEBHOOK_URL"],
