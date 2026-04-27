@@ -111,6 +111,7 @@ jobs:
         run: pytest tests/test_api.py -v --tb=short -x
         env:
           BASE_URL: ${{ secrets.RENDER_URL }}
+          PYTHONPATH: .
 
   # ── Job 5: Slack alert on failure ─────────────────────────────────────────────
   notify-failure:
