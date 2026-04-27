@@ -829,19 +829,10 @@ function monSetStatus(msg){
 }
 
 // ── Theme toggle ─────────────────────────────────────────────────────────────
-function applyStoredTheme() {
-  const saved = localStorage.getItem('cw-theme');
-  const theme = saved === 'light' ? 'light' : 'dark';
-  document.documentElement.setAttribute('data-theme', theme);
-  document.getElementById('mon-theme-icon').textContent = theme === 'dark' ? '☀' : '☽';
-}
-
 document.getElementById('mon-theme-toggle').addEventListener('click',()=>{
   const h=document.documentElement;
   const d=h.getAttribute('data-theme')==='dark';
-  const next = d?'light':'dark';
-  h.setAttribute('data-theme', next);
-  localStorage.setItem('cw-theme', next);
+  h.setAttribute('data-theme',d?'light':'dark');
   document.getElementById('mon-theme-icon').textContent=d?'☽':'☀';
   const u={paper_bgcolor:'rgba(0,0,0,0)',plot_bgcolor:'rgba(0,0,0,0)'};
   ['plot-scale','plot-lat','plot-err','plot-hist'].forEach(id=>{
@@ -851,7 +842,6 @@ document.getElementById('mon-theme-toggle').addEventListener('click',()=>{
 
 // ── Boot ─────────────────────────────────────────────────────────────────────
 window.addEventListener('load',()=>{
-  applyStoredTheme();
   monInitPlots();
   monSetStatus('Ready — click Load Test to begin automated demo');
 });

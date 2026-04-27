@@ -43,6 +43,24 @@
 
 <section class="controls-bar">
   <div class="ctrl-group">
+    <label>KDE Feature</label>
+    <select id="cfg-feature-x">
+      <option value="gas">gas</option>
+      <option value="biomass">biomass</option>
+      <option value="coal" selected>coal</option>
+      <option value="solar">solar</option>
+      <option value="wind">wind</option>
+      <option value="nuclear">nuclear</option>
+      <option value="hydro">hydro</option>
+      <option value="imports">imports</option>
+      <option value="other">other</option>
+    </select>
+  </div>
+  <div class="ctrl-group">
+    <label>KS Threshold</label>
+    <input type="number" id="cfg-threshold" value="0.30" min="0.01" max="0.8" step="0.01">
+  </div>
+  <div class="ctrl-group">
     <label>Init samples</label>
     <input type="number" id="cfg-n-init" value="1000" min="10" max="5000" step="10">
   </div>
@@ -51,14 +69,17 @@
     <input type="number" id="cfg-n-monthly" value="1000" min="1" max="5000" step="10">
   </div>
   <div class="ctrl-group">
-    <label>Speed</label>
-    <input type="text" value="1.0s / period (fixed)" disabled>
+    <label>Speed (s / month)</label>
+    <input type="range" id="cfg-speed" min="0.2" max="3.0" step="0.1" value="1.0">
+    <span id="cfg-speed-val">1.0s</span>
   </div>
   <div class="ctrl-actions">
     <button class="btn btn-primary"  id="btn-init">⬡ Initialize</button>
     <button class="btn btn-run"      id="btn-simulate" disabled>▶ Simulate</button>
     <button class="btn btn-pause"    id="btn-pause"    disabled>⏸ Pause</button>
     <button class="btn btn-reset"    id="btn-reset"    disabled>↺ Reset</button>
+    <button class="btn btn-run"      id="btn-agent-run">⚙ Run Agent</button>
+    <span id="agent-status" style="font-size:11px;color:var(--text-dim);min-width:150px;">Agent: idle</span>
   </div>
 </section>
 
@@ -78,7 +99,19 @@
     <div class="panel" id="panel-kde">
       <div class="panel-header">
         <span class="panel-title">DISTRIBUTION SHIFT</span>
-        <span class="panel-sub">Coal, gas, and wind — reference vs current</span>
+        <div class="kde-controls">
+          <select id="kde-feature-select">
+            <option value="gas">gas</option>
+            <option value="biomass">biomass</option>
+            <option value="coal" selected>coal</option>
+            <option value="solar">solar</option>
+            <option value="wind">wind</option>
+            <option value="nuclear">nuclear</option>
+            <option value="hydro">hydro</option>
+            <option value="imports">imports</option>
+            <option value="other">other</option>
+          </select>
+        </div>
       </div>
       <div id="plot-kde" class="plot-area"></div>
       <div class="pills-row" id="pills-row">
@@ -147,6 +180,21 @@
       </div>
       <div class="log-body" id="log-body">
         <div class="log-entry log-entry--idle">Awaiting initialization…</div>
+      </div>
+    </div>
+
+    <div class="panel panel--log">
+      <div class="panel-header">
+        <span class="panel-title">AGENT LOGS</span>
+        <div style="display:flex;gap:6px;align-items:center;">
+          <span id="agent-badge" class="pill" style="padding:2px 8px;letter-spacing:.05em;">IDLE</span>
+          <button class="btn btn-reset" id="btn-agent-report" style="padding:4px 8px;font-size:10px;" disabled>Open Report</button>
+          <button class="btn btn-reset" id="btn-agent-toggle" style="padding:4px 8px;font-size:10px;">Hide</button>
+          <button class="btn btn-reset" id="btn-agent-refresh" style="padding:4px 8px;font-size:10px;">Refresh</button>
+        </div>
+      </div>
+      <div class="log-body" id="agent-log-body" style="max-height:170px;">
+        <div class="log-entry log-entry--idle">No agent logs yet.</div>
       </div>
     </div>
 
