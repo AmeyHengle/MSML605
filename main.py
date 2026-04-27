@@ -193,51 +193,64 @@ def _generate_main_pipeline_summary(report_data: dict) -> str:
             "Retrain event detected in main pipeline; review attached metrics and charts in the report."
         )
 
-    body = {
-        "model": "llama-3.3-70b-versatile",
-        "temperature": 0.2,
-        "max_tokens": 700,
-        "messages": [
-            {
-                "role": "system",
-                "content": (
-                    "You are an ML product analyst. Produce a comprehensive summary for product stakeholders. "
-                    "Cover drift behavior, retrain trigger rationale, old/new model impact, risk, and next actions."
-                ),
+    model_candidates = [
+        os.getenv("GROQ_MODEL", "").strip(),
+        "llama-3.1-8b-instant",
+        "llama-3.1-70b-versatile",
+    ]
+    model_candidates = [m for m in model_candidates if m]
+    for model_name in model_candidates:
+        body = {
+            "model": model_name,
+            "temperature": 0.2,
+            "max_tokens": 700,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": (
+                        "You are an ML product analyst. Produce a comprehensive summary for product stakeholders. "
+                        "Cover drift behavior, retrain trigger rationale, old/new model impact, risk, and next actions."
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": json.dumps(report_data)[:14000],
+                },
+            ],
+        }
+        req = urllib.request.Request(
+            "https://api.groq.com/openai/v1/chat/completions",
+            data=json.dumps(body).encode("utf-8"),
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
             },
-            {
-                "role": "user",
-                "content": json.dumps(report_data)[:14000],
-            },
-        ],
-    }
-    req = urllib.request.Request(
-        "https://api.groq.com/openai/v1/chat/completions",
-        data=json.dumps(body).encode("utf-8"),
-        headers={
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        },
-        method="POST",
-    )
-    try:
-        _log_report_event("info", "groq_request_started", retrain_found=bool(report_data.get("retrain_found")))
-        with urllib.request.urlopen(req, timeout=25) as resp:
-            payload = json.loads(resp.read().decode("utf-8"))
-        choices = payload.get("choices") or []
-        if not choices:
-            raise RuntimeError("No choices returned")
-        out = (choices[0].get("message") or {}).get("content", "").strip()
-        if not out:
-            raise RuntimeError("Empty summary")
-        _log_report_event("info", "groq_request_succeeded", summary_chars=len(out))
-        return out
-    except (urllib.error.URLError, TimeoutError, RuntimeError, json.JSONDecodeError) as exc:
-        _log_report_event("error", "groq_request_failed", error=str(exc))
-        return (
-            "Groq summary request failed. Retrain event detected in main pipeline; "
-            "use the attached metrics and report artifacts for review."
+            method="POST",
         )
+        try:
+            _log_report_event(
+                "info",
+                "groq_request_started",
+                retrain_found=bool(report_data.get("retrain_found")),
+                model=model_name,
+            )
+            with urllib.request.urlopen(req, timeout=25) as resp:
+                payload = json.loads(resp.read().decode("utf-8"))
+            choices = payload.get("choices") or []
+            if not choices:
+                raise RuntimeError("No choices returned")
+            out = (choices[0].get("message") or {}).get("content", "").strip()
+            if not out:
+                raise RuntimeError("Empty summary")
+            _log_report_event("info", "groq_request_succeeded", summary_chars=len(out), model=model_name)
+            return out
+        except (urllib.error.URLError, TimeoutError, RuntimeError, json.JSONDecodeError) as exc:
+            _log_report_event("error", "groq_request_failed", error=str(exc), model=model_name)
+
+    return (
+        "Groq summary request failed. Retrain event detected in main pipeline; "
+        "use the attached metrics and report artifacts for review."
+    )
 
 
 def _write_pdf_report(pdf_path: Path, report_data: dict, summary: str) -> None:
