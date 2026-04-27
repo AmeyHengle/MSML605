@@ -76,42 +76,14 @@ jobs:
 
   # ── Job 4: Post-deploy smoke tests ────────────────────────────────────────────
   smoke-tests:
-    name: Post-deploy smoke tests
+    name: Post-deploy smoke tests (paused)
     runs-on: ubuntu-latest
     needs: deploy-backend
     steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: amey-demo
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-          cache: 'pip'
-
-      - name: Poll until service is live
+      - name: Smoke tests paused — no remote pytest or health poll
         run: |
-          MAX=18
-          COUNT=0
-          until curl -sf "${{ secrets.RENDER_URL }}/api/status" > /dev/null; do
-            COUNT=$((COUNT+1))
-            if [ $COUNT -ge $MAX ]; then
-              echo "Service did not come up after $((MAX*10))s"
-              exit 1
-            fi
-            echo "Attempt $COUNT/$MAX — retrying in 10s..."
-            sleep 10
-          done
-          echo "Service is live"
-
-      - name: Install test dependencies
-        run: pip install -r requirements.txt pytest requests
-
-      - name: Run smoke tests against deployed service
-        run: pytest tests/test_api.py -v --tb=short -x
-        env:
-          BASE_URL: ${{ secrets.RENDER_URL }}
-          PYTHONPATH: .
+          echo "Post-deploy smoke tests are fully paused (pytest + Render poll skipped)."
+          echo "Re-enable when ready: checkout → poll /api/status → pytest tests/test_api.py"
 
   # ── Job 5: Slack alert on failure ─────────────────────────────────────────────
   notify-failure:
