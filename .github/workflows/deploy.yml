@@ -287,22 +287,27 @@ jobs:
           import urllib.request
 
           report = json.load(open("/tmp/retrain_report.json"))
-          if report.get("status") != "succeeded":
-              print(f"Retrain report not generated. status={report.get('status')}")
-              raise SystemExit(0)
+          status = report.get("status")
+          if status == "failed":
+              raise SystemExit("Retrain report generation failed")
+          if status != "succeeded":
+              raise SystemExit(f"Unexpected retrain report status: {status}")
 
           metrics = report.get("metrics", {})
+          retrain_found = bool(report.get("retrain_found"))
           summary = str(report.get("summary", "Summary unavailable"))[:1200]
           pdf_rel = report.get("report_url_pdf", "")
           html_rel = report.get("report_url_html", "")
-          pdf_url = f"{os.environ['RENDER_URL']}{pdf_rel}" if pdf_rel else "not available"
-          html_url = f"{os.environ['RENDER_URL']}{html_rel}" if html_rel else "not available"
+          pdf_url = report.get("report_s3_pdf_url") or (f"{os.environ['RENDER_URL']}{pdf_rel}" if pdf_rel else "not available")
+          html_url = report.get("report_s3_html_url") or (f"{os.environ['RENDER_URL']}{html_rel}" if html_rel else "not available")
           drifted = ", ".join(metrics.get("top_drift_features", [])[:6]) or "none"
           title = f":bar_chart: Main pipeline retrain report — {os.environ['BRANCH']}"
+          color = "#2eb67d" if retrain_found else "#f5a623"
+          retrain_label = "true" if retrain_found else "false"
 
           payload = {
               "attachments": [{
-                  "color": "#2eb67d",
+                  "color": color,
                   "blocks": [
                       {
                           "type": "header",
@@ -312,6 +317,7 @@ jobs:
                           "type": "section",
                           "fields": [
                               {"type": "mrkdwn", "text": f"*Generated at*\n{report.get('generated_at', 'n/a')}"},
+                              {"type": "mrkdwn", "text": f"*Retrain detected*\n{retrain_label}"},
                               {"type": "mrkdwn", "text": f"*KS*\n{metrics.get('ks_stat', 'n/a')}"},
                               {"type": "mrkdwn", "text": f"*PSI*\n{metrics.get('psi', 'n/a')}"},
                               {"type": "mrkdwn", "text": f"*R2*\n{metrics.get('r2', 'n/a')}"},

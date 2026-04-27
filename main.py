@@ -21,6 +21,13 @@ from reportlab.pdfgen import canvas
 from pipeline import PipelineState, ENERGY_FEATURES
 import urllib.error
 import urllib.request
+try:
+    import boto3
+    from botocore.exceptions import BotoCoreError, ClientError
+except Exception:  # noqa: BLE001
+    boto3 = None
+    BotoCoreError = Exception
+    ClientError = Exception
 
 try:
     from monitoring import get_current_metrics, cloudwatch_stream
@@ -56,10 +63,16 @@ _agent_job = {
 _main_report_lock = threading.Lock()
 _main_report_job = {
     'status': 'idle',
+    'running': False,
+    'started_at': None,
+    'ended_at': None,
     'generated_at': None,
     'error': None,
+    'retrain_found': None,
     'pdf_path': None,
     'html_path': None,
+    'pdf_s3_url': None,
+    'html_s3_url': None,
     'summary': None,
     'report_data': None,
 }
@@ -224,6 +237,7 @@ def _write_pdf_report(pdf_path: Path, report_data: dict, summary: str) -> None:
 
     write_line("Main Pipeline Retrain Report", font="Helvetica-Bold", size=16, gap=20)
     write_line(f"Generated at (UTC): {report_data.get('generated_at')}", font="Helvetica", size=9, gap=12)
+    write_line(f"Retrain detected: {bool(report_data.get('retrain_found'))}", font="Helvetica", size=9, gap=12)
     write_line(f"Retrain period: {report_data.get('retrain_period')}", font="Helvetica", size=9, gap=12)
     write_line(f"Model version: {report_data.get('model_version')}", font="Helvetica", size=9, gap=12)
     write_line(f"KS at retrain: {report_data.get('ks_stat')}", font="Helvetica", size=9, gap=12)
@@ -260,6 +274,7 @@ def _build_main_report_html(report_data: dict, summary: str) -> str:
 <body>
   <h1>Main Pipeline Retrain Report</h1>
   <div class="meta">Generated at: {report_data.get('generated_at')}</div>
+  <div class="meta">Retrain detected: {bool(report_data.get('retrain_found'))}</div>
   <div class="meta">Retrain period: {report_data.get('retrain_period')}</div>
   <div class="meta">Model version: {report_data.get('model_version')}</div>
   <div class="panel">
@@ -291,6 +306,125 @@ def _build_main_report_html(report_data: dict, summary: str) -> str:
 </body>
 </html>
 """
+
+
+def _latest_main_report_path(suffix: str) -> Path | None:
+    reports_dir = Path(os.getenv('REPORTS_DIR', Path(__file__).resolve().parent / 'reports'))
+    if not reports_dir.exists():
+        return None
+    candidates = sorted(reports_dir.glob(f"main_retrain_*{suffix}"), key=lambda p: p.stat().st_mtime, reverse=True)
+    return candidates[0] if candidates else None
+
+
+def _maybe_upload_report_to_s3(local_path: Path) -> str | None:
+    bucket = os.getenv("REPORT_S3_BUCKET", "").strip()
+    if not bucket or boto3 is None:
+        return None
+
+    prefix = os.getenv("REPORT_S3_PREFIX", "reports").strip().strip("/")
+    key = f"{prefix}/{local_path.name}" if prefix else local_path.name
+    content_type = "application/pdf" if local_path.suffix.lower() == ".pdf" else "text/html"
+    try:
+        client = boto3.client("s3")
+        client.upload_file(
+            str(local_path),
+            bucket,
+            key,
+            ExtraArgs={"ContentType": content_type},
+        )
+        return f"https://{bucket}.s3.amazonaws.com/{key}"
+    except (BotoCoreError, ClientError, OSError):
+        return None
+
+
+def _run_main_retrain_report_job() -> dict:
+    cfg = InitConfig().model_dump()
+    state = PipelineState(cfg)
+    init_payload = state.initialize()
+
+    periods = []
+    ks_hist = []
+    psi_hist = []
+    r2_hist = []
+    rmse_hist = []
+    retrain_payload = None
+    last_payload = None
+    for _ in range(len(state.days)):
+        tick = state.tick()
+        if tick is None:
+            break
+        last_payload = tick
+        periods.append(tick.get('month'))
+        ks_hist.append(tick.get('ks_stat'))
+        psi_hist.append(tick.get('psi'))
+        r2_hist.append(tick.get('r2'))
+        rmse_hist.append(tick.get('rmse'))
+        if tick.get('retrained'):
+            retrain_payload = tick
+            break
+
+    anchor = retrain_payload or last_payload
+    if anchor is None:
+        raise RuntimeError("Pipeline produced no simulation payload")
+
+    retrain_found = retrain_payload is not None
+    top_drift = sorted(
+        (f for f, sev in (anchor.get('drift_pills') or {}).items() if sev in {'high', 'critical'}),
+        key=lambda x: x,
+    )[:6]
+    report_data = {
+        'generated_at': _utc_now_iso(),
+        'retrain_found': retrain_found,
+        'init': {
+            'feature_x': init_payload.get('feature_x'),
+            'feature_y': init_payload.get('feature_y'),
+            'total_periods': init_payload.get('total_months'),
+        },
+        'retrain_period': anchor.get('month'),
+        'model_version': anchor.get('model_version'),
+        'ks_stat': anchor.get('ks_stat'),
+        'psi': anchor.get('psi'),
+        'r2': anchor.get('r2'),
+        'rmse': anchor.get('rmse'),
+        'top_drift_features': top_drift,
+        'ui_snapshot': {
+            'pca_x': anchor.get('pca_x', []),
+            'pca_y': anchor.get('pca_y', []),
+            'kde_ref_x': anchor.get('kde_ref_x', []),
+            'kde_ref_y': anchor.get('kde_ref_y', []),
+            'kde_cur_x': anchor.get('kde_cur_x', []),
+            'kde_cur_y': anchor.get('kde_cur_y', []),
+            'line_pc1': anchor.get('new_line', {}).get('line_pc1') if anchor.get('new_line') else [],
+            'line_y': anchor.get('new_line', {}).get('line_y') if anchor.get('new_line') else [],
+        },
+        'history': {
+            'periods': periods,
+            'ks': ks_hist,
+            'psi': psi_hist,
+            'r2': r2_hist,
+            'rmse': rmse_hist,
+        },
+    }
+    summary = _generate_main_pipeline_summary(report_data)
+
+    reports_dir = Path(os.getenv('REPORTS_DIR', Path(__file__).resolve().parent / 'reports'))
+    stem = f"main_retrain_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}"
+    html_path = reports_dir / f"{stem}.html"
+    pdf_path = reports_dir / f"{stem}.pdf"
+    html_path.parent.mkdir(parents=True, exist_ok=True)
+    html_path.write_text(_build_main_report_html(report_data, summary), encoding='utf-8')
+    _write_pdf_report(pdf_path, report_data, summary)
+
+    return {
+        'status': 'succeeded',
+        'generated_at': report_data['generated_at'],
+        'summary': summary,
+        'report_data': report_data,
+        'pdf_path': str(pdf_path.resolve()),
+        'html_path': str(html_path.resolve()),
+        'pdf_s3_url': _maybe_upload_report_to_s3(pdf_path),
+        'html_s3_url': _maybe_upload_report_to_s3(html_path),
+    }
 
 
 # ── Pipeline routes ───────────────────────────────────────────────────────────
@@ -417,93 +551,50 @@ async def predict(req: PredictRequest):
 
 @app.post('/api/retrain-report/run')
 async def retrain_report_run():
-    cfg = InitConfig().model_dump()
-    state = PipelineState(cfg)
-    init_payload = state.initialize()
-
-    periods = []
-    ks_hist = []
-    psi_hist = []
-    r2_hist = []
-    rmse_hist = []
-    retrain_payload = None
-    for _ in range(len(state.days)):
-        tick = state.tick()
-        if tick is None:
-            break
-        periods.append(tick.get('month'))
-        ks_hist.append(tick.get('ks_stat'))
-        psi_hist.append(tick.get('psi'))
-        r2_hist.append(tick.get('r2'))
-        rmse_hist.append(tick.get('rmse'))
-        if tick.get('retrained'):
-            retrain_payload = tick
-            break
-
-    if retrain_payload is None:
-        return {'status': 'no_retrain', 'message': 'No retrain event observed in main pipeline simulation window.'}
-
-    top_drift = sorted(
-        (f for f, sev in (retrain_payload.get('drift_pills') or {}).items() if sev in {'high', 'critical'}),
-        key=lambda x: x,
-    )[:6]
-    report_data = {
-        'generated_at': _utc_now_iso(),
-        'init': {
-            'feature_x': init_payload.get('feature_x'),
-            'feature_y': init_payload.get('feature_y'),
-            'total_periods': init_payload.get('total_months'),
-        },
-        'retrain_period': retrain_payload.get('month'),
-        'model_version': retrain_payload.get('model_version'),
-        'ks_stat': retrain_payload.get('ks_stat'),
-        'psi': retrain_payload.get('psi'),
-        'r2': retrain_payload.get('r2'),
-        'rmse': retrain_payload.get('rmse'),
-        'top_drift_features': top_drift,
-        'ui_snapshot': {
-            'pca_x': retrain_payload.get('pca_x', []),
-            'pca_y': retrain_payload.get('pca_y', []),
-            'kde_ref_x': retrain_payload.get('kde_ref_x', []),
-            'kde_ref_y': retrain_payload.get('kde_ref_y', []),
-            'kde_cur_x': retrain_payload.get('kde_cur_x', []),
-            'kde_cur_y': retrain_payload.get('kde_cur_y', []),
-            'line_pc1': retrain_payload.get('new_line', {}).get('line_pc1') if retrain_payload.get('new_line') else [],
-            'line_y': retrain_payload.get('new_line', {}).get('line_y') if retrain_payload.get('new_line') else [],
-        },
-        'history': {
-            'periods': periods,
-            'ks': ks_hist,
-            'psi': psi_hist,
-            'r2': r2_hist,
-            'rmse': rmse_hist,
-        },
-    }
-    summary = _generate_main_pipeline_summary(report_data)
-
-    reports_dir = Path(os.getenv('REPORTS_DIR', Path(__file__).resolve().parent / 'reports'))
-    stem = f"main_retrain_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}"
-    html_path = reports_dir / f"{stem}.html"
-    pdf_path = reports_dir / f"{stem}.pdf"
-    html_path.parent.mkdir(parents=True, exist_ok=True)
-    html_path.write_text(_build_main_report_html(report_data, summary), encoding='utf-8')
-    _write_pdf_report(pdf_path, report_data, summary)
-
     with _main_report_lock:
-        _main_report_job['status'] = 'succeeded'
-        _main_report_job['generated_at'] = report_data['generated_at']
+        if _main_report_job.get('running'):
+            raise HTTPException(status_code=409, detail='Main retrain report job already running')
+        _main_report_job['status'] = 'running'
+        _main_report_job['running'] = True
+        _main_report_job['started_at'] = _utc_now_iso()
+        _main_report_job['ended_at'] = None
+        _main_report_job['generated_at'] = None
         _main_report_job['error'] = None
-        _main_report_job['pdf_path'] = str(pdf_path.resolve())
-        _main_report_job['html_path'] = str(html_path.resolve())
-        _main_report_job['summary'] = summary
-        _main_report_job['report_data'] = report_data
+        _main_report_job['retrain_found'] = None
+
+    try:
+        result = _run_main_retrain_report_job()
+        report_data = result['report_data']
+        with _main_report_lock:
+            _main_report_job['status'] = 'succeeded'
+            _main_report_job['running'] = False
+            _main_report_job['ended_at'] = _utc_now_iso()
+            _main_report_job['generated_at'] = report_data['generated_at']
+            _main_report_job['error'] = None
+            _main_report_job['retrain_found'] = bool(report_data.get('retrain_found'))
+            _main_report_job['pdf_path'] = result['pdf_path']
+            _main_report_job['html_path'] = result['html_path']
+            _main_report_job['pdf_s3_url'] = result.get('pdf_s3_url')
+            _main_report_job['html_s3_url'] = result.get('html_s3_url')
+            _main_report_job['summary'] = result['summary']
+            _main_report_job['report_data'] = report_data
+    except Exception as exc:  # noqa: BLE001
+        with _main_report_lock:
+            _main_report_job['status'] = 'failed'
+            _main_report_job['running'] = False
+            _main_report_job['ended_at'] = _utc_now_iso()
+            _main_report_job['generated_at'] = _utc_now_iso()
+            _main_report_job['error'] = str(exc)
+        raise HTTPException(status_code=500, detail=f"Failed to generate main retrain report: {exc}") from exc
 
     return {
         'status': 'succeeded',
         'generated_at': report_data['generated_at'],
         'report_url_pdf': '/api/retrain-report/latest/pdf',
         'report_url_html': '/api/retrain-report/latest/html',
-        'summary': summary,
+        'report_s3_pdf_url': result.get('pdf_s3_url'),
+        'report_s3_html_url': result.get('html_s3_url'),
+        'summary': result['summary'],
         'metrics': {
             'ks_stat': report_data['ks_stat'],
             'psi': report_data['psi'],
@@ -511,16 +602,51 @@ async def retrain_report_run():
             'rmse': report_data['rmse'],
             'top_drift_features': report_data['top_drift_features'],
         },
+        'retrain_found': bool(report_data.get('retrain_found')),
     }
+
+
+@app.get('/api/retrain-report/status')
+async def retrain_report_status():
+    with _main_report_lock:
+        pdf_path = _main_report_job.get('pdf_path')
+        html_path = _main_report_job.get('html_path')
+        pdf_exists = bool(pdf_path and Path(pdf_path).exists())
+        html_exists = bool(html_path and Path(html_path).exists())
+        if not pdf_exists and _latest_main_report_path(".pdf") is not None:
+            pdf_exists = True
+        if not html_exists and _latest_main_report_path(".html") is not None:
+            html_exists = True
+        return {
+            'status': _main_report_job.get('status', 'idle'),
+            'running': bool(_main_report_job.get('running', False)),
+            'started_at': _main_report_job.get('started_at'),
+            'ended_at': _main_report_job.get('ended_at'),
+            'generated_at': _main_report_job.get('generated_at'),
+            'error': _main_report_job.get('error'),
+            'retrain_found': _main_report_job.get('retrain_found'),
+            'pdf_available': pdf_exists,
+            'html_available': html_exists,
+            'pdf_url': '/api/retrain-report/latest/pdf' if pdf_exists else None,
+            'html_url': '/api/retrain-report/latest/html' if html_exists else None,
+            'pdf_s3_url': _main_report_job.get('pdf_s3_url'),
+            'html_s3_url': _main_report_job.get('html_s3_url'),
+        }
 
 
 @app.get('/api/retrain-report/latest/pdf')
 async def retrain_report_latest_pdf():
     with _main_report_lock:
         pdf_path_raw = _main_report_job.get('pdf_path')
-    if not pdf_path_raw:
-        raise HTTPException(status_code=404, detail='No main-pipeline retrain PDF report generated yet')
-    pdf_path = Path(pdf_path_raw).resolve()
+    if pdf_path_raw:
+        pdf_path = Path(pdf_path_raw).resolve()
+    else:
+        found = _latest_main_report_path(".pdf")
+        if found is None:
+            raise HTTPException(status_code=404, detail='No main-pipeline retrain PDF report generated yet')
+        pdf_path = found.resolve()
+        with _main_report_lock:
+            _main_report_job['pdf_path'] = str(pdf_path)
     if not pdf_path.exists():
         raise HTTPException(status_code=404, detail='PDF report file not found')
     return FileResponse(str(pdf_path), media_type='application/pdf', filename=pdf_path.name)
@@ -530,9 +656,15 @@ async def retrain_report_latest_pdf():
 async def retrain_report_latest_html():
     with _main_report_lock:
         html_path_raw = _main_report_job.get('html_path')
-    if not html_path_raw:
-        raise HTTPException(status_code=404, detail='No main-pipeline retrain HTML report generated yet')
-    html_path = Path(html_path_raw).resolve()
+    if html_path_raw:
+        html_path = Path(html_path_raw).resolve()
+    else:
+        found = _latest_main_report_path(".html")
+        if found is None:
+            raise HTTPException(status_code=404, detail='No main-pipeline retrain HTML report generated yet')
+        html_path = found.resolve()
+        with _main_report_lock:
+            _main_report_job['html_path'] = str(html_path)
     if not html_path.exists():
         raise HTTPException(status_code=404, detail='HTML report file not found')
     return FileResponse(str(html_path), media_type='text/html', filename=html_path.name)
