@@ -182,13 +182,20 @@ jobs:
     if: ${{ always() && needs.smoke-tests.result != 'success' && needs.smoke-tests.result != 'skipped' && !startsWith(github.event.head_commit.message, 'Revert') }}
     permissions:
       contents: write
-      workflows: write
     steps:
+      - name: Require rollback PAT
+        run: |
+          if [ -z "${{ secrets.ROLLBACK_PAT }}" ]; then
+            echo "Missing ROLLBACK_PAT secret"
+            echo "Create a PAT with repo + workflow write permissions and add it as ROLLBACK_PAT."
+            exit 1
+          fi
+
       - uses: actions/checkout@v4
         with:
           ref: amey-demo
           fetch-depth: 2
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.ROLLBACK_PAT }}
 
       - name: Configure git identity
         run: |
