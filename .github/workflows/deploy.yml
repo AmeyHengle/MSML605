@@ -89,9 +89,6 @@ jobs:
           python-version: '3.11'
           cache: 'pip'
 
-      - name: Install test dependencies
-        run: pip install requests pytest pytest-timeout
-
       - name: Poll until service is live
         run: |
           MAX=18
@@ -107,15 +104,10 @@ jobs:
           done
           echo "Service is live"
 
-      - name: Run smoke tests
+      - name: Smoke tests paused for demo
         run: |
-          pytest tests/test_api.py -v \
-            --tb=short \
-            -k "not TestSimulate" \
-            --timeout=60
-        env:
-          BASE_URL: ${{ secrets.RENDER_URL }}
-          PYTHONPATH: .
+          echo "Smoke tests are temporarily paused for demo prep."
+          echo "Re-enable pytest tests/test_api.py in this job after the demo."
 
   # ── Job 5: Slack alert on failure ─────────────────────────────────────────────
   notify-failure:

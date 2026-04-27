@@ -111,13 +111,13 @@ function initPcaPlot(pca_x, pca_y, line_pc1, line_y) {
   Plotly.newPlot('plot-pca', [
     {
       x: pca_x, y: pca_y, mode: 'markers', type: 'scatter', name: 'Model training data',
-      marker: { color: '#4C72B0', size: 5, opacity: 0.75,
-                line: { color: '#fff', width: 0.4 } },
+      marker: { color: '#4C72B0', size: 8, opacity: 0.88,
+                line: { color: '#fff', width: 0.8 } },
     },
     {
       x: [], y: [], mode: 'markers', type: 'scatter', name: 'New incoming data',
-      marker: { color: '#f5a623', size: 5, opacity: 0.82,
-                line: { color: '#fff', width: 0.4 } },
+      marker: { color: '#f5a623', size: 9, opacity: 0.95,
+                line: { color: '#fff', width: 0.9 } },
     },
     {
       x: line_pc1, y: line_y, mode: 'lines', type: 'scatter', name: 'Model fit',
@@ -510,8 +510,12 @@ btnSim.addEventListener('click', () => {
     addLog(`[${d.month}]  ${d.log}`, logType);
 
     if (d.done) {
-      addLog('All months processed — simulation complete.', 'done');
-      updateHeader(d.month, d.total_months, d.total_months, 'DONE');
+      if (d.retrained) {
+        addLog('First retrain reached — simulation auto-stopped for demo.', 'done');
+      } else {
+        addLog('All months processed — simulation complete.', 'done');
+      }
+      updateHeader(d.month, d.month_idx + 1, d.total_months, 'DONE');
       evtSource.close(); btnPause.disabled = true;
     }
   };

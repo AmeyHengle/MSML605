@@ -76,10 +76,29 @@ _main_report_job = {
     'summary': None,
     'report_data': None,
 }
+_report_events = deque(maxlen=300)
+_report_notify_lock = threading.Lock()
+_last_notified_model_version = 0
+_sim_history = {
+    'periods': [],
+    'ks': [],
+    'psi': [],
+    'r2': [],
+    'rmse': [],
+}
 
 
 def _utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _log_report_event(level: str, message: str, **meta) -> None:
+    _report_events.append({
+        'ts': _utc_now_iso(),
+        'level': level,
+        'message': message,
+        'meta': meta,
+    })
 
 
 def _agent_status_payload() -> dict:
@@ -168,6 +187,7 @@ class PredictRequest(BaseModel):
 def _generate_main_pipeline_summary(report_data: dict) -> str:
     api_key = os.getenv("GROQ_API_KEY", "").strip()
     if not api_key:
+        _log_report_event("warn", "groq_api_key_missing")
         return (
             "Groq summary unavailable because GROQ_API_KEY is not configured. "
             "Retrain event detected in main pipeline; review attached metrics and charts in the report."
@@ -201,6 +221,7 @@ def _generate_main_pipeline_summary(report_data: dict) -> str:
         method="POST",
     )
     try:
+        _log_report_event("info", "groq_request_started", retrain_found=bool(report_data.get("retrain_found")))
         with urllib.request.urlopen(req, timeout=25) as resp:
             payload = json.loads(resp.read().decode("utf-8"))
         choices = payload.get("choices") or []
@@ -209,8 +230,10 @@ def _generate_main_pipeline_summary(report_data: dict) -> str:
         out = (choices[0].get("message") or {}).get("content", "").strip()
         if not out:
             raise RuntimeError("Empty summary")
+        _log_report_event("info", "groq_request_succeeded", summary_chars=len(out))
         return out
-    except (urllib.error.URLError, TimeoutError, RuntimeError, json.JSONDecodeError):
+    except (urllib.error.URLError, TimeoutError, RuntimeError, json.JSONDecodeError) as exc:
+        _log_report_event("error", "groq_request_failed", error=str(exc))
         return (
             "Groq summary request failed. Retrain event detected in main pipeline; "
             "use the attached metrics and report artifacts for review."
@@ -337,6 +360,147 @@ def _maybe_upload_report_to_s3(local_path: Path) -> str | None:
         return None
 
 
+def _save_report_artifacts(report_data: dict, summary: str) -> dict:
+    reports_dir = Path(os.getenv('REPORTS_DIR', Path(__file__).resolve().parent / 'reports'))
+    stem = f"main_retrain_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}"
+    html_path = reports_dir / f"{stem}.html"
+    pdf_path = reports_dir / f"{stem}.pdf"
+    html_path.parent.mkdir(parents=True, exist_ok=True)
+    html_path.write_text(_build_main_report_html(report_data, summary), encoding='utf-8')
+    _write_pdf_report(pdf_path, report_data, summary)
+    _log_report_event("info", "report_artifacts_written", pdf=str(pdf_path), html=str(html_path))
+    return {
+        'pdf_path': str(pdf_path.resolve()),
+        'html_path': str(html_path.resolve()),
+        'pdf_s3_url': _maybe_upload_report_to_s3(pdf_path),
+        'html_s3_url': _maybe_upload_report_to_s3(html_path),
+    }
+
+
+def _send_slack_report_notification(payload: dict) -> None:
+    webhook = os.getenv("SLACK_WEBHOOK_URL", "").strip()
+    if not webhook:
+        _log_report_event("warn", "slack_webhook_missing")
+        return
+    req = urllib.request.Request(
+        webhook,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=12) as resp:
+            body = resp.read().decode("utf-8", errors="ignore")
+        _log_report_event("info", "slack_webhook_succeeded", response=body[:120])
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode("utf-8", errors="ignore")
+        _log_report_event("error", "slack_webhook_http_error", code=exc.code, body=body[:400])
+    except Exception as exc:  # noqa: BLE001
+        _log_report_event("error", "slack_webhook_failed", error=str(exc))
+
+
+def _notify_live_retrain(payload: dict) -> None:
+    try:
+        global _last_notified_model_version
+        mv = int(payload.get("model_version", 0) or 0)
+        with _report_notify_lock:
+            if mv <= _last_notified_model_version:
+                _log_report_event("info", "live_retrain_duplicate_skipped", model_version=mv)
+                return
+            _last_notified_model_version = mv
+
+        with _main_report_lock:
+            hist = {
+                'periods': list(_sim_history['periods']),
+                'ks': list(_sim_history['ks']),
+                'psi': list(_sim_history['psi']),
+                'r2': list(_sim_history['r2']),
+                'rmse': list(_sim_history['rmse']),
+            }
+
+        top_drift = sorted(
+            (f for f, sev in (payload.get('drift_pills') or {}).items() if sev in {'high', 'critical'}),
+            key=lambda x: x,
+        )[:6]
+        report_data = {
+            'generated_at': _utc_now_iso(),
+            'retrain_found': True,
+            'init': {
+                'feature_x': getattr(_state, 'feature_x', 'gas') if _state is not None else 'gas',
+                'feature_y': getattr(_state, 'feature_y', 'forecast_intensity') if _state is not None else 'forecast_intensity',
+                'total_periods': int(payload.get('total_months', 0) or 0),
+            },
+            'retrain_period': payload.get('month'),
+            'model_version': payload.get('model_version'),
+            'ks_stat': payload.get('ks_stat'),
+            'psi': payload.get('psi'),
+            'r2': payload.get('r2'),
+            'rmse': payload.get('rmse'),
+            'top_drift_features': top_drift,
+            'ui_snapshot': {
+                'pca_x': payload.get('pca_x', []),
+                'pca_y': payload.get('pca_y', []),
+                'kde_ref_x': payload.get('kde_ref_x', []),
+                'kde_ref_y': payload.get('kde_ref_y', []),
+                'kde_cur_x': payload.get('kde_cur_x', []),
+                'kde_cur_y': payload.get('kde_cur_y', []),
+                'line_pc1': payload.get('new_line', {}).get('line_pc1') if payload.get('new_line') else [],
+                'line_y': payload.get('new_line', {}).get('line_y') if payload.get('new_line') else [],
+            },
+            'history': hist,
+        }
+        summary = _generate_main_pipeline_summary(report_data)
+        artifacts = _save_report_artifacts(report_data, summary)
+
+        with _main_report_lock:
+            _main_report_job['status'] = 'succeeded'
+            _main_report_job['running'] = False
+            _main_report_job['ended_at'] = _utc_now_iso()
+            _main_report_job['generated_at'] = report_data['generated_at']
+            _main_report_job['error'] = None
+            _main_report_job['retrain_found'] = True
+            _main_report_job['pdf_path'] = artifacts['pdf_path']
+            _main_report_job['html_path'] = artifacts['html_path']
+            _main_report_job['pdf_s3_url'] = artifacts.get('pdf_s3_url')
+            _main_report_job['html_s3_url'] = artifacts.get('html_s3_url')
+            _main_report_job['summary'] = summary
+            _main_report_job['report_data'] = report_data
+
+        base = os.getenv("RENDER_URL", "").rstrip("/")
+        pdf_url = artifacts.get('pdf_s3_url') or (f"{base}/api/retrain-report/latest/pdf" if base else "/api/retrain-report/latest/pdf")
+        html_url = artifacts.get('html_s3_url') or (f"{base}/api/retrain-report/latest/html" if base else "/api/retrain-report/latest/html")
+        slack_payload = {
+            "attachments": [{
+                "color": "#2eb67d",
+                "blocks": [
+                    {"type": "header", "text": {"type": "plain_text", "text": ":bar_chart: Live retrain report", "emoji": True}},
+                    {
+                        "type": "section",
+                        "fields": [
+                            {"type": "mrkdwn", "text": f"*Period*\n{payload.get('month', 'n/a')}"},
+                            {"type": "mrkdwn", "text": f"*Model version*\n{payload.get('model_version', 'n/a')}"},
+                            {"type": "mrkdwn", "text": f"*KS*\n{payload.get('ks_stat', 'n/a')}"},
+                            {"type": "mrkdwn", "text": f"*PSI*\n{payload.get('psi', 'n/a')}"},
+                            {"type": "mrkdwn", "text": f"*R2*\n{payload.get('r2', 'n/a')}"},
+                            {"type": "mrkdwn", "text": f"*RMSE*\n{payload.get('rmse', 'n/a')}"},
+                        ],
+                    },
+                    {
+                        "type": "section",
+                        "fields": [
+                            {"type": "mrkdwn", "text": f"*PDF report*\n{pdf_url}"},
+                            {"type": "mrkdwn", "text": f"*HTML report*\n{html_url}"},
+                        ],
+                    },
+                    {"type": "section", "text": {"type": "mrkdwn", "text": f"*LLM summary*\n{summary[:1000]}"}},
+                ],
+            }]
+        }
+        _send_slack_report_notification(slack_payload)
+    except Exception as exc:  # noqa: BLE001
+        _log_report_event("error", "live_retrain_notify_failed", error=str(exc))
+
+
 def _run_main_retrain_report_job() -> dict:
     cfg = InitConfig().model_dump()
     state = PipelineState(cfg)
@@ -407,30 +571,24 @@ def _run_main_retrain_report_job() -> dict:
     }
     summary = _generate_main_pipeline_summary(report_data)
 
-    reports_dir = Path(os.getenv('REPORTS_DIR', Path(__file__).resolve().parent / 'reports'))
-    stem = f"main_retrain_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}"
-    html_path = reports_dir / f"{stem}.html"
-    pdf_path = reports_dir / f"{stem}.pdf"
-    html_path.parent.mkdir(parents=True, exist_ok=True)
-    html_path.write_text(_build_main_report_html(report_data, summary), encoding='utf-8')
-    _write_pdf_report(pdf_path, report_data, summary)
+    artifacts = _save_report_artifacts(report_data, summary)
 
     return {
         'status': 'succeeded',
         'generated_at': report_data['generated_at'],
         'summary': summary,
         'report_data': report_data,
-        'pdf_path': str(pdf_path.resolve()),
-        'html_path': str(html_path.resolve()),
-        'pdf_s3_url': _maybe_upload_report_to_s3(pdf_path),
-        'html_s3_url': _maybe_upload_report_to_s3(html_path),
+        'pdf_path': artifacts['pdf_path'],
+        'html_path': artifacts['html_path'],
+        'pdf_s3_url': artifacts.get('pdf_s3_url'),
+        'html_s3_url': artifacts.get('html_s3_url'),
     }
 
 
 # ── Pipeline routes ───────────────────────────────────────────────────────────
 @app.post('/api/initialize')
 async def initialize(config: InitConfig):
-    global _state, _simulation_running
+    global _state, _simulation_running, _last_notified_model_version
 
     # Validate early so bad input returns 4xx instead of internal KeyError.
     if config.feature_x not in ENERGY_FEATURES:
@@ -441,6 +599,14 @@ async def initialize(config: InitConfig):
 
     _simulation_running = False
     _state  = PipelineState(config.model_dump())
+    with _main_report_lock:
+        _sim_history['periods'].clear()
+        _sim_history['ks'].clear()
+        _sim_history['psi'].clear()
+        _sim_history['r2'].clear()
+        _sim_history['rmse'].clear()
+    _last_notified_model_version = 0
+    _log_report_event("info", "pipeline_initialized", feature_x=config.feature_x, feature_y=config.feature_y)
     payload = _state.initialize()
     return {'status': 'ok', 'data': payload}
 
@@ -469,6 +635,21 @@ async def simulate(request: Request):
                 if payload is None:
                     yield 'data: {"done": true}\n\n'
                     break
+                with _main_report_lock:
+                    _sim_history['periods'].append(payload.get('month'))
+                    _sim_history['ks'].append(payload.get('ks_stat'))
+                    _sim_history['psi'].append(payload.get('psi'))
+                    _sim_history['r2'].append(payload.get('r2'))
+                    _sim_history['rmse'].append(payload.get('rmse'))
+                if payload.get('retrained'):
+                    _log_report_event(
+                        "info",
+                        "live_retrain_detected",
+                        period=payload.get('month'),
+                        model_version=payload.get('model_version'),
+                    )
+                    threading.Thread(target=_notify_live_retrain, args=(payload,), daemon=True).start()
+                    payload['done'] = True
                 yield f'data: {json.dumps(payload, cls=NumpyEncoder)}\n\n'
                 if payload.get('done'):
                     break
@@ -505,9 +686,17 @@ async def resume():
 
 @app.post('/api/reset')
 async def reset():
-    global _state, _simulation_running
+    global _state, _simulation_running, _last_notified_model_version
     _simulation_running = False
     _state = None
+    with _main_report_lock:
+        _sim_history['periods'].clear()
+        _sim_history['ks'].clear()
+        _sim_history['psi'].clear()
+        _sim_history['r2'].clear()
+        _sim_history['rmse'].clear()
+    _last_notified_model_version = 0
+    _log_report_event("info", "pipeline_reset")
     return {'status': 'reset'}
 
 
@@ -561,6 +750,7 @@ async def retrain_report_run():
         _main_report_job['generated_at'] = None
         _main_report_job['error'] = None
         _main_report_job['retrain_found'] = None
+    _log_report_event("info", "manual_report_run_started")
 
     try:
         result = _run_main_retrain_report_job()
@@ -578,6 +768,7 @@ async def retrain_report_run():
             _main_report_job['html_s3_url'] = result.get('html_s3_url')
             _main_report_job['summary'] = result['summary']
             _main_report_job['report_data'] = report_data
+        _log_report_event("info", "manual_report_run_succeeded", retrain_found=bool(report_data.get('retrain_found')))
     except Exception as exc:  # noqa: BLE001
         with _main_report_lock:
             _main_report_job['status'] = 'failed'
@@ -585,6 +776,7 @@ async def retrain_report_run():
             _main_report_job['ended_at'] = _utc_now_iso()
             _main_report_job['generated_at'] = _utc_now_iso()
             _main_report_job['error'] = str(exc)
+        _log_report_event("error", "manual_report_run_failed", error=str(exc))
         raise HTTPException(status_code=500, detail=f"Failed to generate main retrain report: {exc}") from exc
 
     return {
@@ -631,6 +823,28 @@ async def retrain_report_status():
             'html_url': '/api/retrain-report/latest/html' if html_exists else None,
             'pdf_s3_url': _main_report_job.get('pdf_s3_url'),
             'html_s3_url': _main_report_job.get('html_s3_url'),
+        }
+
+
+@app.get('/api/retrain-report/debug')
+async def retrain_report_debug():
+    with _main_report_lock:
+        return {
+            'env': {
+                'groq_api_key_set': bool(os.getenv("GROQ_API_KEY", "").strip()),
+                'slack_webhook_set': bool(os.getenv("SLACK_WEBHOOK_URL", "").strip()),
+                'render_url_set': bool(os.getenv("RENDER_URL", "").strip()),
+                'reports_dir': str(Path(os.getenv('REPORTS_DIR', Path(__file__).resolve().parent / 'reports')).resolve()),
+            },
+            'main_report_status': {
+                'status': _main_report_job.get('status'),
+                'running': _main_report_job.get('running'),
+                'started_at': _main_report_job.get('started_at'),
+                'ended_at': _main_report_job.get('ended_at'),
+                'error': _main_report_job.get('error'),
+                'retrain_found': _main_report_job.get('retrain_found'),
+            },
+            'recent_events': list(_report_events),
         }
 
 

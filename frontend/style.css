@@ -139,7 +139,7 @@ html, body {
 /* ── Main grid ────────────────────────────────────────────────── */
 .grid {
   display: grid;
-  grid-template-columns: 1fr 400px;
+  grid-template-columns: 1fr 360px;
   height: calc(100vh - 52px - 58px);
   overflow: hidden;
 }
@@ -176,8 +176,9 @@ html, body {
 }
 
 /* ── Plot areas ───────────────────────────────────────────────── */
-.plot-area       { height: 260px; }
+.plot-area       { height: 300px; }
 .plot-area--mini { height: 90px; }
+#panel-pca .plot-area { height: 420px; }
 
 /* ── KDE feature dropdown ─────────────────────────────────────── */
 .kde-controls select {
