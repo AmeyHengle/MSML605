@@ -728,6 +728,106 @@ def _run_main_retrain_report_job() -> dict:
     }
 
 
+# ── Dashboard route (Page 1 — carbon intensity overview) ─────────────────────
+
+_dashboard_cache: dict = {}
+_dashboard_lock = threading.Lock()
+
+
+@app.get('/api/dashboard')
+async def dashboard():
+    """
+    Train a model on all historical data and return current predicted
+    intensity, generation mix, forecast trend, and model stats.
+    Results are cached to avoid retraining on every page load.
+    """
+    import pandas as pd
+    from sklearn.linear_model import LinearRegression
+    from sklearn.metrics import r2_score, mean_squared_error as mse
+
+    with _dashboard_lock:
+        if _dashboard_cache.get('ready'):
+            return _dashboard_cache['payload']
+
+    data_path = os.environ.get('DATA_PATH', 'data/historical_data.csv')
+    df = pd.read_csv(data_path)
+    if 'timestamp' in df.columns:
+        df['timestamp'] = pd.to_datetime(df['timestamp'], utc=True, errors='coerce')
+    df = df.dropna(subset=['timestamp']).sort_values('timestamp').reset_index(drop=True)
+
+    from pipeline import add_time_features, ensure_feature_columns
+    df = add_time_features(df)
+    df = ensure_feature_columns(df, ENERGY_FEATURES + ['forecast_intensity'])
+    df = df.drop(columns=[c for c in df.columns if c.startswith('factor_')], errors='ignore')
+
+    clean = df[ENERGY_FEATURES + ['forecast_intensity']].dropna()
+    X = clean[ENERGY_FEATURES].values
+    y = clean['forecast_intensity'].values
+
+    model = LinearRegression()
+    model.fit(X, y)
+
+    y_pred_all = model.predict(X)
+    r2 = float(r2_score(y, y_pred_all))
+    rmse = float(np.sqrt(mse(y, y_pred_all)))
+
+    latest_row = clean.iloc[-1]
+    latest_X = latest_row[ENERGY_FEATURES].values.reshape(1, -1)
+    predicted_intensity = float(model.predict(latest_X)[0])
+
+    val = predicted_intensity
+    if val <= 50:
+        intensity_index = 'very low'
+    elif val <= 100:
+        intensity_index = 'low'
+    elif val <= 200:
+        intensity_index = 'moderate'
+    elif val <= 300:
+        intensity_index = 'high'
+    else:
+        intensity_index = 'very high'
+
+    gen_mix = {feat: float(latest_row[feat]) for feat in ENERGY_FEATURES}
+
+    tail = df[ENERGY_FEATURES + ['forecast_intensity', 'timestamp']].dropna().tail(48)
+    tail_X = tail[ENERGY_FEATURES].values
+    tail_pred = model.predict(tail_X)
+    forecast_trend = {
+        'timestamps': [t.isoformat() for t in tail['timestamp']],
+        'actual': [float(v) for v in tail['forecast_intensity'].values],
+        'predicted': [float(v) for v in tail_pred],
+    }
+
+    coefs = model.coef_
+    importance = np.abs(coefs) / (np.abs(coefs).sum() + 1e-12)
+    feature_importance = {
+        feat: round(float(imp), 4)
+        for feat, imp in sorted(
+            zip(ENERGY_FEATURES, importance), key=lambda x: -x[1]
+        )
+    }
+
+    payload = {
+        'predicted_intensity': round(predicted_intensity, 1),
+        'intensity_index': intensity_index,
+        'generation_mix': gen_mix,
+        'forecast_trend': forecast_trend,
+        'model_stats': {
+            'r2': round(r2, 4),
+            'rmse': round(rmse, 2),
+            'training_samples': int(len(y)),
+            'features': len(ENERGY_FEATURES),
+            'feature_importance': feature_importance,
+        },
+    }
+
+    with _dashboard_lock:
+        _dashboard_cache['ready'] = True
+        _dashboard_cache['payload'] = payload
+
+    return payload
+
+
 # ── Pipeline routes ───────────────────────────────────────────────────────────
 @app.post('/api/initialize')
 async def initialize(config: InitConfig):

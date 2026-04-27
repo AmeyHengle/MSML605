@@ -6,7 +6,7 @@
 <title>CarbonWatch — Deployment Monitor</title>
 <link rel="stylesheet" href="style.css">
 <!-- NOTE: app.js is intentionally NOT loaded here.
-     It belongs to index.html (pipeline page) and would conflict
+     It belongs to simulation.html (pipeline page) and would conflict
      with this page's button handlers. -->
 <script src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
 <style>
@@ -53,6 +53,11 @@
     <span class="logo-mark">◈</span>
     <span class="logo-text">CarbonWatch <em>Monitor</em></span>
   </div>
+  <nav class="topbar-nav">
+    <a href="index.html" class="nav-link">Dashboard</a>
+    <a href="simulation.html" class="nav-link">Simulation</a>
+    <a href="monitoring.html" class="nav-link nav-link--active">Monitor</a>
+  </nav>
   <div class="topbar-center">
     <div class="month-ticker">
       <span class="ticker-label">Endpoint</span>
@@ -72,8 +77,6 @@
     <button class="theme-toggle" id="mon-theme-toggle" title="Toggle theme">
       <span id="mon-theme-icon">☀</span>
     </button>
-    <a href="index.html" style="font-size:11px;color:var(--text-dim);text-decoration:none;
-       padding:4px 10px;border:1px solid var(--border);border-radius:6px;">← Pipeline</a>
   </div>
 </header>
 

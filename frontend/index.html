@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CarbonWatch MLOps</title>
+<title>CarbonWatch — Carbon Intensity Dashboard</title>
 <link rel="stylesheet" href="style.css">
 <script src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
 </head>
@@ -12,196 +12,255 @@
 <header class="topbar">
   <div class="topbar-left">
     <span class="logo-mark">◈</span>
-    <span class="logo-text">CarbonWatch <em>MLOps</em></span>
+    <span class="logo-text">CarbonWatch</span>
   </div>
-  <div class="topbar-center">
-    <div class="month-ticker">
-      <span class="ticker-label">CURRENT PERIOD</span>
-      <span class="ticker-value" id="hdr-month">—</span>
-    </div>
-    <div class="month-ticker">
-      <span class="ticker-label">PROGRESS</span>
-      <span class="ticker-value" id="hdr-progress">0 / —</span>
-    </div>
-    <div class="month-ticker">
-      <span class="ticker-label">STATUS</span>
-      <span class="ticker-value" id="hdr-status">IDLE</span>
-    </div>
-  </div>
+  <nav class="topbar-nav">
+    <a href="index.html" class="nav-link nav-link--active">Dashboard</a>
+    <a href="simulation.html" class="nav-link">Simulation</a>
+    <a href="monitoring.html" class="nav-link">Monitor</a>
+  </nav>
   <div class="topbar-right">
-    <div class="pill" id="pill-drift">DRIFT: —</div>
     <button class="theme-toggle" id="theme-toggle" title="Toggle light / dark">
       <span id="theme-icon">☀</span>
     </button>
-    <a href="monitoring.html"
-       style="font-size:11px;color:var(--text-dim);text-decoration:none;
-              padding:4px 10px;border:1px solid var(--border);border-radius:6px;">
-      Monitor →
-    </a>
   </div>
 </header>
 
-<section class="controls-bar">
-  <div class="ctrl-group">
-    <label>KDE Feature</label>
-    <select id="cfg-feature-x">
-      <option value="gas">gas</option>
-      <option value="biomass">biomass</option>
-      <option value="coal" selected>coal</option>
-      <option value="solar">solar</option>
-      <option value="wind">wind</option>
-      <option value="nuclear">nuclear</option>
-      <option value="hydro">hydro</option>
-      <option value="imports">imports</option>
-      <option value="other">other</option>
-    </select>
-  </div>
-  <div class="ctrl-group">
-    <label>KS Threshold</label>
-    <input type="number" id="cfg-threshold" value="0.30" min="0.01" max="0.8" step="0.01">
-  </div>
-  <div class="ctrl-group">
-    <label>Init samples</label>
-    <input type="number" id="cfg-n-init" value="1000" min="10" max="5000" step="10">
-  </div>
-  <div class="ctrl-group">
-    <label>Monthly samples</label>
-    <input type="number" id="cfg-n-monthly" value="1000" min="1" max="5000" step="10">
-  </div>
-  <div class="ctrl-group">
-    <label>Speed (s / month)</label>
-    <input type="range" id="cfg-speed" min="0.2" max="3.0" step="0.1" value="1.0">
-    <span id="cfg-speed-val">1.0s</span>
-  </div>
-  <div class="ctrl-actions">
-    <button class="btn btn-primary"  id="btn-init">⬡ Initialize</button>
-    <button class="btn btn-run"      id="btn-simulate" disabled>▶ Simulate</button>
-    <button class="btn btn-pause"    id="btn-pause"    disabled>⏸ Pause</button>
-    <button class="btn btn-reset"    id="btn-reset"    disabled>↺ Reset</button>
-    <button class="btn btn-run"      id="btn-agent-run">⚙ Run Agent</button>
-    <span id="agent-status" style="font-size:11px;color:var(--text-dim);min-width:150px;">Agent: idle</span>
-  </div>
-</section>
+<main class="dash">
 
-<main class="grid">
-
-  <!-- ── LEFT: three stacked panels ──────────────────────────── -->
-  <div class="col-left">
-
-    <div class="panel" id="panel-pca">
-      <div class="panel-header">
-        <span class="panel-title">PCA PROJECTION</span>
-        <span class="panel-sub">PC1 (all 9 features) → forecast intensity</span>
-      </div>
-      <div id="plot-pca" class="plot-area"></div>
+  <section class="dash-hero">
+    <div class="dash-hero-label">Current Carbon Intensity Forecast</div>
+    <div class="dash-hero-card" id="hero-card">
+      <div class="dash-hero-value" id="hero-value">—</div>
+      <div class="dash-hero-unit">gCO<sub>2</sub>/kWh</div>
+      <div class="dash-hero-index" id="hero-index">loading...</div>
     </div>
-
-    <div class="panel" id="panel-kde">
-      <div class="panel-header">
-        <span class="panel-title">DISTRIBUTION SHIFT</span>
-        <div class="kde-controls">
-          <select id="kde-feature-select">
-            <option value="gas">gas</option>
-            <option value="biomass">biomass</option>
-            <option value="coal" selected>coal</option>
-            <option value="solar">solar</option>
-            <option value="wind">wind</option>
-            <option value="nuclear">nuclear</option>
-            <option value="hydro">hydro</option>
-            <option value="imports">imports</option>
-            <option value="other">other</option>
-          </select>
-        </div>
-      </div>
-      <div id="plot-kde" class="plot-area"></div>
-      <div class="pills-row" id="pills-row">
-        <span class="feat-pill none" data-feat="biomass">biomass</span>
-        <span class="feat-pill none" data-feat="coal">coal</span>
-        <span class="feat-pill none" data-feat="imports">imports</span>
-        <span class="feat-pill none" data-feat="gas">gas</span>
-        <span class="feat-pill none" data-feat="nuclear">nuclear</span>
-        <span class="feat-pill none" data-feat="other">other</span>
-        <span class="feat-pill none" data-feat="hydro">hydro</span>
-        <span class="feat-pill none" data-feat="solar">solar</span>
-        <span class="feat-pill none" data-feat="wind">wind</span>
-      </div>
+    <div class="dash-hero-sub">
+      Predicted by linear regression model trained on all historical generation mix data
     </div>
+  </section>
 
-  </div>
+  <section class="dash-charts">
+    <div class="panel dash-chart-main">
+      <div class="panel-header">
+        <span class="panel-title">CARBON INTENSITY FORECAST</span>
+        <span class="panel-sub">Actual vs Predicted (last 48 data points)</span>
+      </div>
+      <div id="plot-forecast" style="height:340px;"></div>
+    </div>
+    <div class="panel dash-chart-side">
+      <div class="panel-header">
+        <span class="panel-title">GENERATION MIX</span>
+        <span class="panel-sub">Latest data point</span>
+      </div>
+      <div id="plot-genmix" style="height:340px;"></div>
+    </div>
+  </section>
 
-  <!-- ── RIGHT: dashboard + log ──────────────────────────────── -->
-  <div class="col-right">
-
+  <section class="dash-stats">
     <div class="panel">
       <div class="panel-header">
-        <span class="panel-title">MODEL DASHBOARD</span>
-        <span class="version-badge" id="version-badge">v —</span>
+        <span class="panel-title">MODEL PERFORMANCE</span>
+        <span class="panel-sub">Trained on full historical dataset</span>
       </div>
-      <div class="metrics-grid">
-        <div class="metric-card">
-          <div class="metric-label">R² Score</div>
-          <div class="metric-value" id="m-r2">—</div>
-          <div class="metric-hint">current month fit</div>
+      <div class="dash-stats-grid">
+        <div class="dash-stat-card">
+          <div class="dash-stat-label">R² Score</div>
+          <div class="dash-stat-value" id="stat-r2">—</div>
         </div>
-        <div class="metric-card">
-          <div class="metric-label">RMSE (gCO₂/kWh)</div>
-          <div class="metric-value" id="m-rmse">—</div>
-          <div class="metric-hint">absolute error</div>
+        <div class="dash-stat-card">
+          <div class="dash-stat-label">RMSE</div>
+          <div class="dash-stat-value" id="stat-rmse">—</div>
+          <div class="dash-stat-unit">gCO₂/kWh</div>
         </div>
-        <div class="metric-card">
-          <div class="metric-label">KS Statistic</div>
-          <div class="metric-value" id="m-ks">—</div>
-          <div class="metric-hint">input drift magnitude</div>
+        <div class="dash-stat-card">
+          <div class="dash-stat-label">Training Samples</div>
+          <div class="dash-stat-value" id="stat-samples">—</div>
         </div>
-        <div class="metric-card">
-          <div class="metric-label">PSI</div>
-          <div class="metric-value" id="m-psi">—</div>
-          <div class="metric-hint">drift severity index</div>
-        </div>
-        <div class="metric-card">
-          <div class="metric-label">Last Retrain</div>
-          <div class="metric-value metric-value--sm" id="m-retrain">—</div>
-          <div class="metric-hint">period triggered</div>
-        </div>
-        <div class="metric-card">
-          <div class="metric-label">Model Version</div>
-          <div class="metric-value" id="m-version">—</div>
-          <div class="metric-hint">active checkpoint</div>
+        <div class="dash-stat-card">
+          <div class="dash-stat-label">Features</div>
+          <div class="dash-stat-value" id="stat-features">—</div>
         </div>
       </div>
-      <div class="panel-sub-header">DRIFT METRICS HISTORY (KS + PSI)</div>
-      <div id="plot-drift" class="plot-area plot-area--mini"></div>
     </div>
-
-    <div class="panel panel--log">
+    <div class="panel">
       <div class="panel-header">
-        <span class="panel-title">PIPELINE LOG</span>
-        <span class="log-count" id="log-count">0 events</span>
+        <span class="panel-title">FEATURE IMPORTANCE</span>
+        <span class="panel-sub">Relative contribution to prediction</span>
       </div>
-      <div class="log-body" id="log-body">
-        <div class="log-entry log-entry--idle">Awaiting initialization…</div>
-      </div>
+      <div id="plot-importance" style="height:220px;"></div>
     </div>
-
-    <div class="panel panel--log">
-      <div class="panel-header">
-        <span class="panel-title">AGENT LOGS</span>
-        <div style="display:flex;gap:6px;align-items:center;">
-          <span id="agent-badge" class="pill" style="padding:2px 8px;letter-spacing:.05em;">IDLE</span>
-          <button class="btn btn-reset" id="btn-agent-report" style="padding:4px 8px;font-size:10px;" disabled>Open Report</button>
-          <button class="btn btn-reset" id="btn-agent-toggle" style="padding:4px 8px;font-size:10px;">Hide</button>
-          <button class="btn btn-reset" id="btn-agent-refresh" style="padding:4px 8px;font-size:10px;">Refresh</button>
-        </div>
-      </div>
-      <div class="log-body" id="agent-log-body" style="max-height:170px;">
-        <div class="log-entry log-entry--idle">No agent logs yet.</div>
-      </div>
-    </div>
-
-  </div>
+  </section>
 
 </main>
 
-<script src="app.js"></script>
+<script>
+const API = 'https://msml605.onrender.com';
+
+const INTENSITY_COLORS = {
+  'very low':  '#7CBB00',
+  'low':       '#FFD500',
+  'moderate':  '#FF9500',
+  'high':      '#FF3A00',
+  'very high': '#C00000',
+};
+
+function themeColors() {
+  const s = getComputedStyle(document.documentElement);
+  return {
+    bg:      s.getPropertyValue('--bg').trim(),
+    surface: s.getPropertyValue('--surface').trim(),
+    text:    s.getPropertyValue('--text').trim(),
+    textDim: s.getPropertyValue('--text-dim').trim(),
+    accent:  s.getPropertyValue('--accent').trim(),
+    border:  s.getPropertyValue('--border').trim(),
+    grid:    s.getPropertyValue('--border').trim(),
+  };
+}
+
+function plotLayout(title, extra) {
+  const c = themeColors();
+  return Object.assign({
+    paper_bgcolor: c.bg,
+    plot_bgcolor:  c.surface,
+    font: { family: 'DM Mono, monospace', size: 11, color: c.text },
+    margin: { l: 50, r: 20, t: 30, b: 40 },
+    xaxis: { gridcolor: c.grid, zerolinecolor: c.grid },
+    yaxis: { gridcolor: c.grid, zerolinecolor: c.grid },
+    title: { text: title || '', font: { size: 12, color: c.textDim } },
+  }, extra || {});
+}
+
+async function loadDashboard() {
+  try {
+    const resp = await fetch(API + '/api/dashboard');
+    if (!resp.ok) throw new Error('API returned ' + resp.status);
+    const data = await resp.json();
+    renderHero(data);
+    renderForecast(data.forecast_trend);
+    renderGenMix(data.generation_mix);
+    renderStats(data.model_stats);
+    renderImportance(data.model_stats.feature_importance);
+  } catch (err) {
+    document.getElementById('hero-value').textContent = '!';
+    document.getElementById('hero-index').textContent = 'Failed to load data';
+    console.error('Dashboard load error:', err);
+  }
+}
+
+function renderHero(data) {
+  const val = data.predicted_intensity;
+  const idx = data.intensity_index;
+  const color = INTENSITY_COLORS[idx] || '#999';
+
+  document.getElementById('hero-value').textContent = val.toFixed(0);
+  const indexEl = document.getElementById('hero-index');
+  indexEl.textContent = idx.toUpperCase();
+  indexEl.style.color = color;
+  indexEl.style.borderColor = color;
+
+  const card = document.getElementById('hero-card');
+  card.style.borderColor = color;
+  card.style.boxShadow = '0 0 40px -10px ' + color + '66';
+}
+
+function renderForecast(trend) {
+  const c = themeColors();
+  const traces = [
+    {
+      x: trend.timestamps, y: trend.actual,
+      name: 'Actual', mode: 'lines',
+      line: { color: '#FF9500', width: 2 },
+    },
+    {
+      x: trend.timestamps, y: trend.predicted,
+      name: 'Predicted', mode: 'lines',
+      line: { color: c.accent, width: 2, dash: 'dot' },
+    },
+  ];
+  const layout = plotLayout('', {
+    xaxis: { gridcolor: c.grid, zerolinecolor: c.grid, type: 'date' },
+    yaxis: { gridcolor: c.grid, zerolinecolor: c.grid, title: 'gCO₂/kWh' },
+    legend: { orientation: 'h', y: 1.12, x: 0.5, xanchor: 'center' },
+    margin: { l: 55, r: 20, t: 40, b: 50 },
+  });
+  Plotly.newPlot('plot-forecast', traces, layout, { responsive: true });
+}
+
+function renderGenMix(mix) {
+  const c = themeColors();
+  const labels = Object.keys(mix);
+  const values = Object.values(mix);
+  const fuelColors = [
+    '#66BB6A', '#555555', '#AB47BC', '#FF7043',
+    '#FFA726', '#78909C', '#29B6F6', '#FFEE58', '#26A69A'
+  ];
+
+  const trace = {
+    labels: labels, values: values,
+    type: 'pie', hole: 0.5,
+    marker: { colors: fuelColors },
+    textinfo: 'label+percent',
+    textfont: { size: 10, family: 'DM Mono, monospace' },
+    hoverinfo: 'label+value+percent',
+  };
+  const layout = plotLayout('', {
+    showlegend: false,
+    margin: { l: 10, r: 10, t: 10, b: 10 },
+  });
+  Plotly.newPlot('plot-genmix', [trace], layout, { responsive: true });
+}
+
+function renderStats(stats) {
+  document.getElementById('stat-r2').textContent = stats.r2.toFixed(4);
+  document.getElementById('stat-rmse').textContent = stats.rmse.toFixed(2);
+  document.getElementById('stat-samples').textContent = stats.training_samples.toLocaleString();
+  document.getElementById('stat-features').textContent = stats.features;
+}
+
+function renderImportance(fi) {
+  const c = themeColors();
+  const labels = Object.keys(fi).reverse();
+  const vals = Object.values(fi).reverse();
+
+  const trace = {
+    y: labels, x: vals,
+    type: 'bar', orientation: 'h',
+    marker: { color: c.accent + 'cc', line: { color: c.accent, width: 1 } },
+    hovertemplate: '%{y}: %{x:.4f}<extra></extra>',
+  };
+  const layout = plotLayout('', {
+    xaxis: { gridcolor: c.grid, zerolinecolor: c.grid, title: 'Relative importance' },
+    yaxis: { gridcolor: c.grid, zerolinecolor: c.grid, automargin: true },
+    margin: { l: 80, r: 20, t: 10, b: 40 },
+  });
+  Plotly.newPlot('plot-importance', [trace], layout, { responsive: true });
+}
+
+function reapplyTheme() {
+  const plots = ['plot-forecast', 'plot-genmix', 'plot-importance'];
+  const c = themeColors();
+  plots.forEach(id => {
+    const el = document.getElementById(id);
+    if (el && el.data) {
+      Plotly.relayout(id, {
+        paper_bgcolor: c.bg, plot_bgcolor: c.surface,
+        'font.color': c.text,
+        'xaxis.gridcolor': c.grid, 'yaxis.gridcolor': c.grid,
+      });
+    }
+  });
+}
+
+document.getElementById('theme-toggle').addEventListener('click', () => {
+  const html = document.documentElement;
+  const next = html.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+  html.setAttribute('data-theme', next);
+  document.getElementById('theme-icon').textContent = next === 'dark' ? '☀' : '☾';
+  reapplyTheme();
+});
+
+loadDashboard();
+</script>
 </body>
 </html>

@@ -1,5 +1,5 @@
-// app.js — CarbonWatch MLOps pipeline page (index.html only)
-// monitoring.html has its own self-contained script and does NOT load this file.
+// app.js — CarbonWatch MLOps pipeline page (simulation.html only)
+// index.html (dashboard) and monitoring.html have their own scripts.
 
 const API = 'https://msml605.onrender.com';
 
