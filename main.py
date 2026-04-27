@@ -247,9 +247,64 @@ def _generate_main_pipeline_summary(report_data: dict) -> str:
         except (urllib.error.URLError, TimeoutError, RuntimeError, json.JSONDecodeError) as exc:
             _log_report_event("error", "groq_request_failed", error=str(exc), model=model_name)
 
+    gemini_key = os.getenv("GEMINI_API_KEY", "").strip()
+    if gemini_key:
+        gemini_model = os.getenv("GEMINI_MODEL", "gemini-1.5-flash").strip() or "gemini-1.5-flash"
+        gemini_url = (
+            "https://generativelanguage.googleapis.com/v1beta/models/"
+            f"{gemini_model}:generateContent?key={gemini_key}"
+        )
+        gemini_body = {
+            "generationConfig": {
+                "temperature": 0.2,
+                "maxOutputTokens": 700,
+            },
+            "contents": [
+                {
+                    "role": "user",
+                    "parts": [
+                        {
+                            "text": (
+                                "You are an ML product analyst. Produce a comprehensive summary for product stakeholders. "
+                                "Cover drift behavior, retrain trigger rationale, old/new model impact, risk, and next actions.\n\n"
+                                + json.dumps(report_data)[:14000]
+                            )
+                        }
+                    ],
+                }
+            ],
+        }
+        gemini_req = urllib.request.Request(
+            gemini_url,
+            data=json.dumps(gemini_body).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        try:
+            _log_report_event("info", "gemini_request_started", model=gemini_model)
+            with urllib.request.urlopen(gemini_req, timeout=25) as resp:
+                gemini_payload = json.loads(resp.read().decode("utf-8"))
+            candidates = gemini_payload.get("candidates") or []
+            if not candidates:
+                raise RuntimeError("No candidates returned")
+            parts = (((candidates[0].get("content") or {}).get("parts")) or [])
+            text_out = "\n".join(
+                (p.get("text", "") or "").strip()
+                for p in parts
+                if isinstance(p, dict)
+            ).strip()
+            if not text_out:
+                raise RuntimeError("Empty Gemini summary")
+            _log_report_event("info", "gemini_request_succeeded", summary_chars=len(text_out), model=gemini_model)
+            return text_out
+        except (urllib.error.URLError, TimeoutError, RuntimeError, json.JSONDecodeError) as exc:
+            _log_report_event("error", "gemini_request_failed", error=str(exc), model=gemini_model)
+    else:
+        _log_report_event("warn", "gemini_api_key_missing")
+
     return (
-        "Groq summary request failed. Retrain event detected in main pipeline; "
-        "use the attached metrics and report artifacts for review."
+        "LLM summary request failed (Groq and Gemini unavailable from hosted runtime). "
+        "Retrain event detected in main pipeline; use attached metrics and report artifacts for review."
     )
 
 
