@@ -182,6 +182,7 @@ jobs:
     if: ${{ always() && needs.smoke-tests.result != 'success' && needs.smoke-tests.result != 'skipped' && !startsWith(github.event.head_commit.message, 'Revert') }}
     permissions:
       contents: write
+      workflows: write
     steps:
       - uses: actions/checkout@v4
         with:
