@@ -1192,6 +1192,71 @@ async def agent_report_latest():
     )
 
 
+# ── Infrastructure alert (monitoring page → Slack) ───────────────────────────
+
+@app.post('/api/alert/infrastructure')
+async def infra_alert(request: Request):
+    body = await request.json()
+    webhook = os.getenv("SLACK_WEBHOOK_URL", "").strip()
+    if not webhook:
+        return {'sent': False, 'reason': 'SLACK_WEBHOOK_URL not set'}
+
+    instances = body.get('instances', 'n/a')
+    utilization = body.get('utilization', 'n/a')
+    rps = body.get('rps', 'n/a')
+    error_rate = body.get('error_rate', 'n/a')
+    p99 = body.get('p99', 'n/a')
+    vu = body.get('virtual_users', 'n/a')
+    msg = body.get('message', 'Service capacity exceeded')
+
+    payload = {
+        'attachments': [{
+            'color': '#E24B4A',
+            'blocks': [
+                {
+                    'type': 'header',
+                    'text': {
+                        'type': 'plain_text',
+                        'text': ':rotating_light: Infrastructure Alert — CarbonWatch',
+                        'emoji': True,
+                    },
+                },
+                {
+                    'type': 'section',
+                    'fields': [
+                        {'type': 'mrkdwn', 'text': f'*Instances*\n{instances}'},
+                        {'type': 'mrkdwn', 'text': f'*Utilization*\n{utilization}%'},
+                        {'type': 'mrkdwn', 'text': f'*RPS*\n{rps}'},
+                        {'type': 'mrkdwn', 'text': f'*Error Rate*\n{error_rate}%'},
+                        {'type': 'mrkdwn', 'text': f'*p99 Latency*\n{p99} ms'},
+                        {'type': 'mrkdwn', 'text': f'*Virtual Users*\n{vu}'},
+                    ],
+                },
+                {
+                    'type': 'section',
+                    'text': {
+                        'type': 'mrkdwn',
+                        'text': f'*Recommendation*\n{msg}',
+                    },
+                },
+            ],
+        }],
+    }
+
+    try:
+        req = urllib.request.Request(
+            webhook,
+            data=json.dumps(payload).encode('utf-8'),
+            headers={'Content-Type': 'application/json'},
+            method='POST',
+        )
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            resp.read()
+        return {'sent': True}
+    except Exception as exc:
+        return {'sent': False, 'reason': str(exc)}
+
+
 # ── Monitoring routes (Page 2 — requires AWS CloudWatch) ─────────────────────
 @app.get('/api/cloudwatch/metrics')
 async def cw_metrics():

@@ -3,29 +3,24 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CarbonWatch — Deployment Monitor</title>
+<title>CarbonWatch — Load Testing & Monitoring</title>
 <link rel="stylesheet" href="style.css">
 <!-- NOTE: app.js is intentionally NOT loaded here.
      It belongs to simulation.html (pipeline page) and would conflict
      with this page's button handlers. -->
 <script src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
 <style>
-.kpi-strip{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px;}
+.kpi-strip{display:grid;grid-template-columns:repeat(6,1fr);gap:10px;margin-bottom:14px;}
 .kpi-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;
           padding:12px 14px;border-left-width:3px;}
 .kpi-label{font-size:10px;letter-spacing:.08em;color:var(--text-dim);
            text-transform:uppercase;margin-bottom:5px;}
-.kpi-val{font-family:'Syne',sans-serif;font-size:26px;font-weight:700;
+.kpi-val{font-family:'Syne',sans-serif;font-size:24px;font-weight:700;
          color:var(--text-bright);line-height:1;}
 .kpi-sub{font-size:10px;color:var(--text-dim);margin-top:3px;}
 .ctrl-row{display:flex;align-items:center;gap:14px;flex-wrap:wrap;
           padding:12px 20px;background:var(--surface);border-bottom:1px solid var(--border);}
 .ctrl-row label{font-size:10px;letter-spacing:.08em;color:var(--text-dim);text-transform:uppercase;}
-.ramp-track{display:flex;gap:0;border-radius:6px;overflow:hidden;border:1px solid var(--border);}
-.ramp-btn{padding:6px 14px;background:var(--surface-2);border:none;color:var(--text-dim);
-          font-family:'DM Mono',monospace;font-size:11px;cursor:pointer;transition:all .2s;}
-.ramp-btn.active{background:var(--accent-dim);color:var(--accent);}
-.ramp-btn:hover:not(.active){background:var(--surface);color:var(--text);}
 .obs-event{background:color-mix(in srgb,var(--accent) 8%,transparent);
            border:1px solid var(--accent-dim);border-radius:8px;
            padding:8px 12px;margin-bottom:8px;font-size:11px;
@@ -44,6 +39,25 @@
 .progress-bar{height:4px;border-radius:2px;background:var(--border);
               margin-top:6px;overflow:hidden;}
 .progress-fill{height:100%;border-radius:2px;background:var(--accent);transition:width .4s;}
+
+/* Phase indicator */
+.phase-track{display:flex;align-items:center;gap:0;margin-left:16px;}
+.phase-step{display:flex;align-items:center;gap:6px;padding:4px 10px;
+            border-radius:6px;font-size:10px;letter-spacing:.06em;
+            color:var(--text-dim);transition:all .4s;border:1px solid transparent;}
+.phase-step.active{color:var(--text-bright);border-color:var(--accent);
+                   background:var(--accent-dim);}
+.phase-step.done{color:var(--green);border-color:var(--green);
+                 background:color-mix(in srgb,var(--green) 8%,transparent);}
+.phase-dot{width:7px;height:7px;border-radius:50%;background:var(--border-hi);
+           transition:all .4s;flex-shrink:0;}
+.phase-step.active .phase-dot{background:var(--accent);box-shadow:0 0 6px var(--accent);}
+.phase-step.done .phase-dot{background:var(--green);}
+.phase-arrow{color:var(--border-hi);font-size:11px;margin:0 2px;}
+
+/* Instance provisioning blink */
+.inst-blink{animation:instPulse .6s infinite;}
+@keyframes instPulse{0%,100%{opacity:1}50%{opacity:.3}}
 </style>
 </head>
 <body>
@@ -59,10 +73,6 @@
     <a href="monitoring.html" class="nav-link nav-link--active">Monitor</a>
   </nav>
   <div class="topbar-center">
-    <div class="month-ticker">
-      <span class="ticker-label">Endpoint</span>
-      <span class="ticker-value" id="hdr-endpoint" style="font-size:11px;">—</span>
-    </div>
     <div class="month-ticker">
       <span class="ticker-label">Total requests</span>
       <span class="ticker-value" id="hdr-total">0</span>
@@ -87,30 +97,20 @@
     <input id="cfg-url" type="text" value="https://msml605.onrender.com"
            style="width:290px;font-size:12px;"/>
   </div>
-  <div style="display:flex;flex-direction:column;gap:4px;">
-    <label>Load profile (virtual users)</label>
-    <div class="ramp-track">
-      <button class="ramp-btn active" data-users="5"   onclick="setProfile(this)">Light (5)</button>
-      <button class="ramp-btn"        data-users="20"  onclick="setProfile(this)">Medium (20)</button>
-      <button class="ramp-btn"        data-users="50"  onclick="setProfile(this)">Heavy (50)</button>
-      <button class="ramp-btn"        data-users="100" onclick="setProfile(this)">Stress (100)</button>
-    </div>
-  </div>
-  <div style="display:flex;flex-direction:column;gap:4px;">
-    <label>Duration (s)</label>
-    <input id="cfg-dur" type="number" value="60" min="10" max="300" step="10"
-           style="width:76px;font-size:12px;"/>
-  </div>
-  <div style="display:flex;flex-direction:column;gap:4px;">
-    <label>Ramp time (s)</label>
-    <input id="cfg-ramp" type="number" value="15" min="0" max="60" step="5"
-           style="width:76px;font-size:12px;"/>
-  </div>
-  <div style="margin-left:auto;display:flex;gap:8px;align-items:flex-end;">
-    <button class="btn btn-primary" id="mon-btn-init"  onclick="monInitModel()">⬡ Init model</button>
-    <button class="btn btn-run"     id="mon-btn-start" onclick="monStartTest()" disabled>▶ Start test</button>
+  <div style="display:flex;gap:8px;align-items:flex-end;">
+    <button class="btn btn-primary" id="mon-btn-init"  onclick="monInitModel()" style="font-size:11px;padding:6px 12px;">⬡ Init</button>
+    <button class="btn btn-run"     id="mon-btn-start" onclick="startLoadTest()">▶ Load Test</button>
     <button class="btn btn-pause"   id="mon-btn-stop"  onclick="monStopTest()"  disabled>⏹ Stop</button>
     <button class="btn btn-reset"   id="mon-btn-reset" onclick="monResetAll()"  disabled>↺ Reset</button>
+  </div>
+  <div class="phase-track" id="phase-track">
+    <div class="phase-step" data-phase="0"><span class="phase-dot"></span> Light</div>
+    <span class="phase-arrow">→</span>
+    <div class="phase-step" data-phase="1"><span class="phase-dot"></span> Medium</div>
+    <span class="phase-arrow">→</span>
+    <div class="phase-step" data-phase="2"><span class="phase-dot"></span> Heavy</div>
+    <span class="phase-arrow">→</span>
+    <div class="phase-step" data-phase="3"><span class="phase-dot"></span> Stress</div>
   </div>
 </div>
 
@@ -119,7 +119,7 @@
   <div class="progress-bar"><div class="progress-fill" id="mon-progress" style="width:0%"></div></div>
   <div style="display:flex;justify-content:space-between;padding:4px 0 0;">
     <span id="mon-status" style="font-size:11px;color:var(--text-dim);">
-      Ready — click Init model, then Start test
+      Ready — click Load Test to begin automated demo
     </span>
     <span id="mon-elapsed" style="font-size:11px;color:var(--text-dim);"></span>
   </div>
@@ -151,14 +151,24 @@
         <div class="kpi-val" id="kpi-err">—</div>
         <div class="kpi-sub">%</div>
       </div>
+      <div class="kpi-card" style="border-left-color:var(--green);">
+        <div class="kpi-label">Instances</div>
+        <div class="kpi-val" id="kpi-inst">1</div>
+        <div class="kpi-sub" id="kpi-inst-sub">running</div>
+      </div>
+      <div class="kpi-card" style="border-left-color:var(--accent);">
+        <div class="kpi-label">Capacity</div>
+        <div class="kpi-val" id="kpi-cap">0%</div>
+        <div class="kpi-sub" id="kpi-cap-sub">utilization</div>
+      </div>
     </div>
 
     <div class="panel">
       <div class="panel-header">
-        <span class="panel-title">THROUGHPUT OVER TIME</span>
-        <span class="panel-sub">real requests/sec — measured client-side</span>
+        <span class="panel-title">SCALING TIMELINE</span>
+        <span class="panel-sub">RPS + auto-scale events</span>
       </div>
-      <div id="plot-tp" class="plot-area" style="height:200px;"></div>
+      <div id="plot-scale" class="plot-area" style="height:210px;"></div>
     </div>
 
     <div class="panel">
@@ -185,7 +195,7 @@
     <div class="panel">
       <div class="panel-header">
         <span class="panel-title">TEST SUMMARY</span>
-        <span class="version-badge" id="profile-badge">Light · 5 users</span>
+        <span class="version-badge" id="profile-badge">Idle</span>
       </div>
       <div style="padding:12px 14px;display:grid;grid-template-columns:1fr 1fr;gap:8px;">
         <div style="background:var(--surface-2);border-radius:8px;padding:10px 12px;">
@@ -228,9 +238,9 @@
         <span class="panel-title">OBSERVATIONS</span>
         <span class="log-count" id="obs-count">0</span>
       </div>
-      <div style="padding:10px 14px;max-height:130px;overflow-y:auto;" id="obs-log">
+      <div style="padding:10px 14px;max-height:160px;overflow-y:auto;" id="obs-log">
         <div style="font-size:11px;color:var(--text-dim);">
-          Automatic observations will appear during the test.
+          Observations will appear during the load test.
         </div>
       </div>
     </div>
@@ -240,7 +250,7 @@
         <span class="panel-title">LIVE REQUEST LOG</span>
         <span class="log-count" id="req-count">0 requests</span>
       </div>
-      <div class="log-body" id="req-log" style="max-height:200px;">
+      <div class="log-body" id="req-log" style="max-height:180px;">
         <div class="log-entry log-entry--idle">Awaiting requests...</div>
       </div>
     </div>
@@ -250,11 +260,128 @@
 </main>
 
 <script>
-// ── All monitoring JS is self-contained — no dependency on app.js ─────────────
+// ── Infrastructure Simulation Layer ──────────────────────────────────────────
+const CAPACITY_PER_INST = 50;
+const RPS_PER_VU        = 2.5;
+const PROVISION_SEC     = 5;
+const BASE_SERVICE_MS   = 50;
 
-const MON_API = document.getElementById('cfg-url').value.trim();
+const infra = {
+  instances: 1,
+  provisioning: false,
+  provisionStart: 0,
+  overSatTicks: 0,
+  alertSent: false,
+  alertTicks: 0,
+  scaleEvents: [],
+};
 
-// ── State ─────────────────────────────────────────────────────────────────────
+let currentActiveVU = 0;
+
+function getCapacity()    { return infra.instances * CAPACITY_PER_INST; }
+function getIntendedRps() { return currentActiveVU * RPS_PER_VU; }
+function getUtilization() { return getIntendedRps() / getCapacity(); }
+
+function queueMultiplier(rho) {
+  if (rho < 0.3)  return 1;
+  if (rho < 0.6)  return 1 + (rho - 0.3) * 2;
+  if (rho < 0.8)  return 1.6 + (rho - 0.6) * 5;
+  if (rho < 0.95) return 2.6 + (rho - 0.8) * 20;
+  if (rho < 1.1)  return 5.6 + (rho - 0.95) * 40;
+  return 12 + (rho - 1.1) * 8 + Math.random() * 5;
+}
+
+function injectedErrorRate(rho) {
+  if (rho < 0.85) return 0;
+  if (rho < 0.95) return 0.03;
+  if (rho < 1.05) return 0.08;
+  if (rho < 1.2)  return 0.15;
+  return 0.25;
+}
+
+function infraAugment(realLat, realOk, realStatus) {
+  const rho  = getUtilization();
+  const mult = queueMultiplier(rho);
+  let simLat = Math.max(realLat, BASE_SERVICE_MS * mult + (Math.random() - 0.5) * 30);
+  if (infra.provisioning) simLat *= 1.4;
+  simLat += Math.random() * 15;
+
+  let simOk = realOk;
+  let simStatus = realStatus;
+  if (simOk && Math.random() < injectedErrorRate(rho)) {
+    simOk = false;
+    simStatus = 503;
+  }
+  return { lat: simLat, ok: simOk, status: simStatus };
+}
+
+function infraTick() {
+  const rho = getUtilization();
+
+  if (infra.provisioning) {
+    const elapsed = (Date.now() - infra.provisionStart) / 1000;
+    if (elapsed >= PROVISION_SEC) {
+      infra.provisioning = false;
+      infra.instances = 2;
+      infra.overSatTicks = 0;
+      infra.scaleEvents.push({ ts: TS[TS.length-1] || '', type: 'scaled', instances: 2 });
+      monObs('✓', `Auto-scaled to 2 instances — capacity doubled to ${getCapacity()} RPS`, 'var(--green)');
+      const el = document.getElementById('kpi-inst');
+      el.textContent = '2'; el.classList.remove('inst-blink');
+      document.getElementById('kpi-inst-sub').textContent = 'running';
+    }
+    return;
+  }
+
+  if (infra.instances < 2 && rho > 0.80) {
+    infra.overSatTicks++;
+    if (infra.overSatTicks >= 3) {
+      infra.provisioning = true;
+      infra.provisionStart = Date.now();
+      infra.overSatTicks = 0;
+      infra.scaleEvents.push({ ts: TS[TS.length-1] || '', type: 'provision' });
+      monObs('↑', `Capacity utilization at ${(rho*100).toFixed(0)}% — provisioning instance 2...`, 'var(--amber)');
+      const el = document.getElementById('kpi-inst');
+      el.textContent = '1→2'; el.classList.add('inst-blink');
+      document.getElementById('kpi-inst-sub').textContent = 'provisioning...';
+    }
+  } else if (infra.instances < 2) {
+    infra.overSatTicks = Math.max(0, infra.overSatTicks - 1);
+  }
+
+  if (infra.instances >= 2 && rho > 1.0) {
+    infra.alertTicks++;
+    if (infra.alertTicks >= 3 && !infra.alertSent) {
+      infra.alertSent = true;
+      infra.scaleEvents.push({ ts: TS[TS.length-1] || '', type: 'alert' });
+      monObs('⚠', `ALERT: All ${infra.instances} instances saturated at ${(rho*100).toFixed(0)}% — Slack alert sent`, 'var(--red)');
+      sendSlackAlert();
+    }
+  } else {
+    infra.alertTicks = Math.max(0, infra.alertTicks - 1);
+  }
+}
+
+// ── Auto-Demo Phases ─────────────────────────────────────────────────────────
+const PHASES = [
+  { name: 'Light',  vu: 5,   sec: 15, color: '#1D9E75' },
+  { name: 'Medium', vu: 20,  sec: 20, color: '#BA7517' },
+  { name: 'Heavy',  vu: 40,  sec: 22, color: '#7F77DD' },
+  { name: 'Stress', vu: 70,  sec: 18, color: '#E24B4A' },
+];
+const TOTAL_DURATION = PHASES.reduce((s, p) => s + p.sec, 0);
+
+let currentPhaseIdx = -1;
+
+function updatePhaseIndicator(idx) {
+  document.querySelectorAll('.phase-step').forEach((el, i) => {
+    el.classList.remove('active', 'done');
+    if (i < idx) el.classList.add('done');
+    else if (i === idx) el.classList.add('active');
+  });
+}
+
+// ── State ────────────────────────────────────────────────────────────────────
 let monRunning       = false;
 let monModelReady    = false;
 let monStartTime     = null;
@@ -265,15 +392,13 @@ let monTotalReqs     = 0;
 let monTotalFails    = 0;
 let monObsCount      = 0;
 let monReqDisplay    = 0;
-let monTargetUsers   = 5;
-let monDuration      = 60;
-let monRampTime      = 15;
 let monPrevP99       = 0;
 let monPrevErrPct    = 0;
 let monPrevRps       = 0;
 
-const MAX_PTS = 120;
-const TS=[],RPS=[],P50=[],P95=[],P99=[],ERR=[];
+const MAX_PTS = 200;
+const TS=[], RPS=[], P50=[], P95=[], P99=[], ERR=[];
+const SC_INST=[], SC_CAP=[];
 
 const SAMPLES=[
   [9.1,0.0,11.0,44.0,18.2,0.0,3.1,0.0,14.6],
@@ -286,7 +411,7 @@ const SAMPLES=[
   [4.4,0.0,3.2,9.8,14.5,0.0,0.1,18.9,49.0],
 ];
 
-// ── Plotly helpers ────────────────────────────────────────────────────────────
+// ── Plotly ───────────────────────────────────────────────────────────────────
 function monTheme(){
   const d=document.documentElement.getAttribute('data-theme')==='dark';
   return{paper:'rgba(0,0,0,0)',plot:'rgba(0,0,0,0)',
@@ -305,34 +430,50 @@ function monLayout(yl,ex){
 const MCFG={displayModeBar:false,responsive:true};
 
 function monInitPlots(){
-  Plotly.newPlot('plot-tp',[
-    {x:[],y:[],name:'req/s',type:'scatter',mode:'lines',fill:'tozeroy',
-     fillcolor:'rgba(127,119,221,0.1)',line:{color:'#7F77DD',width:2}},
-  ],monLayout('req/s'),MCFG);
+  // Scaling Timeline (dual Y)
+  Plotly.newPlot('plot-scale',[
+    {x:[],y:[],name:'RPS',type:'scatter',mode:'lines',fill:'tozeroy',
+     fillcolor:'rgba(127,119,221,0.12)',line:{color:'#7F77DD',width:2}},
+    {x:[],y:[],name:'Capacity',type:'scatter',mode:'lines',
+     line:{color:'#3ecf8e',width:1.5,dash:'dash'}},
+    {x:[],y:[],name:'Instances',type:'scatter',mode:'lines',
+     line:{color:'#3ecf8e',width:3,shape:'hv'},yaxis:'y2'},
+  ],{...monLayout('req/s',{
+    yaxis2:{overlaying:'y',side:'right',range:[0,3.5],dtick:1,
+            title:{text:'instances',font:{size:10}},
+            gridcolor:'rgba(0,0,0,0)',zeroline:false},
+    margin:{l:46,r:46,t:8,b:34},
+  })},MCFG);
+
+  // Latency percentiles
   Plotly.newPlot('plot-lat',[
     {x:[],y:[],name:'p50',type:'scatter',mode:'lines',line:{color:'#1D9E75',width:2}},
     {x:[],y:[],name:'p95',type:'scatter',mode:'lines',line:{color:'#BA7517',width:1.8,dash:'dot'}},
     {x:[],y:[],name:'p99',type:'scatter',mode:'lines',line:{color:'#E24B4A',width:1.8,dash:'dash'}},
   ],monLayout('ms'),MCFG);
+
+  // Error rate
   Plotly.newPlot('plot-err',[
     {x:[],y:[],name:'error %',type:'bar',marker:{color:[]},width:0.6},
   ],{...monLayout('error %'),
     shapes:[{type:'line',xref:'paper',x0:0,x1:1,y0:1,y1:1,
              line:{color:'#E24B4A',width:1,dash:'dot'}}]},MCFG);
+
+  // Histogram
   Plotly.newPlot('plot-hist',[
     {x:[],type:'histogram',marker:{color:'#7F77DD',opacity:0.8},xbins:{size:25}},
   ],{...monLayout('count',{xaxis:{title:{text:'latency (ms)',font:{size:10}}}}),
     bargap:0.05,margin:{l:44,r:10,t:8,b:38}},MCFG);
 }
 
-// ── Percentile ────────────────────────────────────────────────────────────────
+// ── Percentile ───────────────────────────────────────────────────────────────
 function monPct(arr,p){
   if(!arr.length)return 0;
   const s=[...arr].sort((a,b)=>a-b);
   return s[Math.min(Math.floor(s.length*p/100),s.length-1)];
 }
 
-// ── Single request ────────────────────────────────────────────────────────────
+// ── Single request (with infrastructure augmentation) ────────────────────────
 async function monFireReq(){
   const url=document.getElementById('cfg-url').value.trim().replace(/\/$/,'');
   const features=SAMPLES[Math.floor(Math.random()*SAMPLES.length)];
@@ -344,17 +485,19 @@ async function monFireReq(){
       headers:{'Content-Type':'application/json'},
       body:JSON.stringify({features}),
     });
-    status=r.status;ok=(r.status===200);
+    status=r.status; ok=(r.status===200);
   }catch(e){status=0;ok=false;}
-  const lat=performance.now()-t0;
-  if(!ok)monTotalFails++;
+  const realLat=performance.now()-t0;
+
+  const sim = infraAugment(realLat, ok, status);
+  if(!sim.ok) monTotalFails++;
   monTotalReqs++;
-  monWindowBucket.push({lat,ok,status});
-  monAllLatencies.push(lat);
-  monLogReq(status,lat);
+  monWindowBucket.push({lat:sim.lat, ok:sim.ok, status:sim.status});
+  monAllLatencies.push(sim.lat);
+  monLogReq(sim.status, sim.lat);
 }
 
-// ── Virtual user ──────────────────────────────────────────────────────────────
+// ── Virtual user ─────────────────────────────────────────────────────────────
 function monSleep(ms){return new Promise(r=>setTimeout(r,ms));}
 async function monWorker(){
   while(monRunning){
@@ -363,7 +506,7 @@ async function monWorker(){
   }
 }
 
-// ── Aggregate every second ────────────────────────────────────────────────────
+// ── Aggregate every second ───────────────────────────────────────────────────
 function monAggregate(){
   const w=monWindowBucket.splice(0);
   if(!w.length)return;
@@ -376,17 +519,37 @@ function monAggregate(){
   const curP95=monPct(lats,95);
   const curP99=monPct(lats,99);
 
-  [TS,RPS,P50,P95,P99,ERR].forEach(a=>{if(a.length>=MAX_PTS)a.shift();});
-  TS.push(now);RPS.push(curRps);P50.push(+curP50.toFixed(0));
-  P95.push(+curP95.toFixed(0));P99.push(+curP99.toFixed(0));
+  [TS,RPS,P50,P95,P99,ERR,SC_INST,SC_CAP].forEach(a=>{if(a.length>=MAX_PTS)a.shift();});
+  TS.push(now); RPS.push(curRps);
+  P50.push(+curP50.toFixed(0)); P95.push(+curP95.toFixed(0)); P99.push(+curP99.toFixed(0));
   ERR.push(+errPct.toFixed(2));
+  SC_INST.push(infra.instances);
+  SC_CAP.push(getCapacity());
 
-  Plotly.restyle('plot-tp',{x:[TS],y:[RPS]},[0]);
+  // Infrastructure tick
+  infraTick();
+
+  // Update capacity KPI
+  const rho = getUtilization();
+  const capEl = document.getElementById('kpi-cap');
+  const capPct = Math.round(rho * 100);
+  capEl.textContent = capPct + '%';
+  capEl.style.color = rho > 1 ? 'var(--red)' : rho > 0.8 ? 'var(--amber)' : 'var(--green)';
+
+  // Scaling timeline
+  Plotly.restyle('plot-scale',{x:[TS,TS,TS],y:[RPS,SC_CAP,SC_INST]},[0,1,2]);
+
+  // Latency
   Plotly.restyle('plot-lat',{x:[TS,TS,TS],y:[P50,P95,P99]},[0,1,2]);
+
+  // Error bars
   const ec=ERR.map(v=>v===0?'rgba(29,158,117,.6)':v<1?'rgba(186,117,23,.7)':'rgba(224,74,74,.75)');
   Plotly.restyle('plot-err',{x:[TS],y:[ERR],'marker.color':[ec]},[0]);
+
+  // Histogram
   Plotly.restyle('plot-hist',{x:[monAllLatencies]},[0]);
 
+  // KPI cards
   monKpi('kpi-rps',curRps,'live');
   monKpi('kpi-p50',curP50.toFixed(0),'ms');
   monKpi('kpi-p99',curP99.toFixed(0),'ms',
@@ -399,7 +562,7 @@ function monAggregate(){
 
   const pill=document.getElementById('pill-health');
   if(errPct>5){pill.className='pill drifting';pill.textContent='DEGRADED';}
-  else if(errPct>0){pill.className='pill';pill.textContent='WARNING';}
+  else if(errPct>0){pill.className='pill';pill.style.borderColor='var(--amber)';pill.style.color='var(--amber)';pill.textContent='WARNING';}
   else{pill.className='pill ok';pill.textContent='RUNNING';}
 
   document.getElementById('s-peak-rps').textContent=Math.max(...RPS).toFixed(0)+' req/s';
@@ -410,7 +573,7 @@ function monAggregate(){
   document.getElementById('s-p99').textContent=monPct(monAllLatencies,99).toFixed(0)+' ms';
 
   monAutoObserve(curRps,curP99,errPct);
-  monPrevRps=curRps;monPrevP99=curP99;monPrevErrPct=errPct;
+  monPrevRps=curRps; monPrevP99=curP99; monPrevErrPct=errPct;
 }
 
 function monKpi(id,val,sub,color){
@@ -419,16 +582,16 @@ function monKpi(id,val,sub,color){
   el.style.color=color||'var(--text-bright)';
 }
 
-// ── Auto observations ─────────────────────────────────────────────────────────
+// ── Auto observations ────────────────────────────────────────────────────────
 function monAutoObserve(curRps,curP99,errPct){
   if(curP99>500&&monPrevP99<=500)
-    monObs('▲','p99 latency exceeded 500ms — saturation point reached','var(--amber)');
+    monObs('▲','p99 latency exceeded 500ms — server under pressure','var(--amber)');
+  if(curP99>1000&&monPrevP99<=1000)
+    monObs('▲','p99 latency exceeded 1000ms — severe degradation','var(--red)');
   if(errPct>1&&monPrevErrPct<=1)
-    monObs('⚠','Error rate crossed 1% threshold','var(--red)');
-  if(errPct===0&&monPrevErrPct>1)
-    monObs('✓','Error rate recovered to 0%','var(--green)');
-  if(curRps>monPrevRps*1.8&&curRps>15&&monPrevRps>0)
-    monObs('↑',`Throughput spike: ${monPrevRps} → ${curRps} req/s`,'var(--accent)');
+    monObs('⚠','Error rate crossed 1% — requests being dropped','var(--red)');
+  if(errPct>10&&monPrevErrPct<=10)
+    monObs('⚠','Error rate exceeded 10% — critical service degradation','var(--red)');
 }
 
 function monObs(icon,text,color){
@@ -446,7 +609,7 @@ function monObs(icon,text,color){
   log.prepend(el);
 }
 
-// ── Request log ───────────────────────────────────────────────────────────────
+// ── Request log ──────────────────────────────────────────────────────────────
 function monLogReq(status,lat){
   monReqDisplay++;
   document.getElementById('req-count').textContent=
@@ -469,10 +632,9 @@ function monLogReq(status,lat){
   while(body.children.length>60)body.removeChild(body.lastChild);
 }
 
-// ── Init model ────────────────────────────────────────────────────────────────
+// ── Init model ───────────────────────────────────────────────────────────────
 async function monInitModel(){
   const url=document.getElementById('cfg-url').value.trim().replace(/\/$/,'');
-  document.getElementById('hdr-endpoint').textContent=url;
   document.getElementById('mon-btn-init').disabled=true;
   monSetStatus('Pinging server...');
 
@@ -497,7 +659,7 @@ async function monInitModel(){
     const j=await r.json();
     if(!j.data?.pc1_range)throw new Error('Unexpected response shape');
     monModelReady=true;
-    monSetStatus('Model ready — set load profile and click Start test');
+    monSetStatus('Model ready — click Load Test to begin');
     document.getElementById('mon-btn-start').disabled=false;
     document.getElementById('mon-btn-reset').disabled=false;
     monObs('✓',`Model initialised at ${url}`,'var(--green)');
@@ -510,71 +672,102 @@ async function monInitModel(){
   }
 }
 
-// ── Start test ────────────────────────────────────────────────────────────────
-function monStartTest(){
+// ── Automated Load Test ──────────────────────────────────────────────────────
+async function startLoadTest(){
   if(!monModelReady){
-    monObs('→','Skipping init — using model already in server memory','var(--accent)');
-    monModelReady=true;
-  }
-  monRunning=true;
-  monStartTime=Date.now();
-  monDuration=parseInt(document.getElementById('cfg-dur').value);
-  monRampTime=parseInt(document.getElementById('cfg-ramp').value);
-
-  document.getElementById('mon-btn-start').disabled=true;
-  document.getElementById('mon-btn-stop').disabled=false;
-  document.getElementById('mon-btn-init').disabled=true;
-
-  monObs('▶',`Test started — ${monTargetUsers} users · ${monDuration}s`,'var(--accent)');
-
-  const spawnGap=(monRampTime*1000)/Math.max(monTargetUsers,1);
-  for(let i=0;i<monTargetUsers;i++){
-    const t=setTimeout(()=>{if(monRunning)monWorker();},Math.round(i*spawnGap));
-    monWorkerTimers.push(t);
+    await monInitModel();
+    if(!monModelReady) return;
   }
 
-  const agg=setInterval(monAggregate,1000);
-  monWorkerTimers.push(agg);
+  monRunning = true;
+  monStartTime = Date.now();
+  document.getElementById('mon-btn-start').disabled = true;
+  document.getElementById('mon-btn-stop').disabled = false;
+  document.getElementById('mon-btn-init').disabled = true;
+  document.getElementById('mon-btn-reset').disabled = true;
 
-  const prog=setInterval(()=>{
-    const el=(Date.now()-monStartTime)/1000;
-    document.getElementById('mon-progress').style.width=
-      Math.min(100,el/monDuration*100)+'%';
-    document.getElementById('mon-elapsed').textContent=
-      `${el.toFixed(0)}s / ${monDuration}s`;
-    monSetStatus(`Running — ${monTargetUsers} users · ${monTotalReqs.toLocaleString()} requests`);
-    if(el>=monDuration)monStopTest();
-  },500);
-  monWorkerTimers.push(prog);
+  monObs('▶', `Automated load test started — ${PHASES.length} phases · ${TOTAL_DURATION}s`, 'var(--accent)');
+
+  const aggTimer = setInterval(monAggregate, 1000);
+  monWorkerTimers.push(aggTimer);
+
+  const progTimer = setInterval(() => {
+    if (!monStartTime) return;
+    const el = (Date.now() - monStartTime) / 1000;
+    document.getElementById('mon-progress').style.width =
+      Math.min(100, el / TOTAL_DURATION * 100) + '%';
+    document.getElementById('mon-elapsed').textContent =
+      `${el.toFixed(0)}s / ${TOTAL_DURATION}s`;
+  }, 500);
+  monWorkerTimers.push(progTimer);
+
+  let spawnedVU = 0;
+
+  for (let pi = 0; pi < PHASES.length; pi++) {
+    if (!monRunning) break;
+    const phase = PHASES[pi];
+    currentPhaseIdx = pi;
+    currentActiveVU = phase.vu;
+    updatePhaseIndicator(pi);
+
+    document.getElementById('profile-badge').textContent =
+      `Phase ${pi+1} · ${phase.name} · ${phase.vu} VU`;
+    monSetStatus(`Phase ${pi+1}/${PHASES.length}: ${phase.name} — ${phase.vu} virtual users`);
+    monObs('▶', `Phase ${pi+1}: ${phase.name} — ramping to ${phase.vu} virtual users`, phase.color);
+
+    const toSpawn = phase.vu - spawnedVU;
+    for (let i = 0; i < toSpawn; i++) {
+      const delay = Math.round(i * (3000 / Math.max(toSpawn, 1)));
+      const t = setTimeout(() => { if (monRunning) monWorker(); }, delay);
+      monWorkerTimers.push(t);
+    }
+    spawnedVU = phase.vu;
+
+    await new Promise(resolve => {
+      const t = setTimeout(resolve, phase.sec * 1000);
+      monWorkerTimers.push(t);
+    });
+  }
+
+  if (monRunning) {
+    updatePhaseIndicator(PHASES.length);
+    monStopTest();
+  }
 }
 
-// ── Stop ──────────────────────────────────────────────────────────────────────
+// ── Stop ─────────────────────────────────────────────────────────────────────
 function monStopTest(){
-  monRunning=false;
-  monWorkerTimers.forEach(t=>{clearTimeout(t);clearInterval(t);});
-  monWorkerTimers=[];
-  document.getElementById('mon-btn-start').disabled=false;
-  document.getElementById('mon-btn-stop').disabled=true;
-  document.getElementById('mon-progress').style.width='100%';
-  const pill=document.getElementById('pill-health');
-  pill.className='pill'; pill.textContent='DONE';
-  const dur=((Date.now()-monStartTime)/1000).toFixed(0);
+  monRunning = false;
+  monWorkerTimers.forEach(t => { clearTimeout(t); clearInterval(t); });
+  monWorkerTimers = [];
+  document.getElementById('mon-btn-start').disabled = false;
+  document.getElementById('mon-btn-stop').disabled = true;
+  document.getElementById('mon-btn-reset').disabled = false;
+  document.getElementById('mon-progress').style.width = '100%';
+  const pill = document.getElementById('pill-health');
+  pill.className = 'pill'; pill.textContent = 'DONE';
+  pill.style.borderColor = ''; pill.style.color = '';
+  const dur = monStartTime ? ((Date.now() - monStartTime) / 1000).toFixed(0) : '0';
   monSetStatus(`Complete — ${dur}s · ${monTotalReqs.toLocaleString()} requests · ${monTotalFails} failures`);
-  if(monAllLatencies.length)
+  if (monAllLatencies.length)
     monObs('⏹',
-      `Done. Peak ${Math.max(...RPS)} req/s · p50 ${monPct(monAllLatencies,50).toFixed(0)}ms · p99 ${monPct(monAllLatencies,99).toFixed(0)}ms`,
+      `Done. Peak ${Math.max(...RPS)} req/s · p50 ${monPct(monAllLatencies,50).toFixed(0)}ms · p99 ${monPct(monAllLatencies,99).toFixed(0)}ms · ${infra.instances} instances`,
       'var(--text-dim)');
 }
 
-// ── Reset ─────────────────────────────────────────────────────────────────────
+// ── Reset ────────────────────────────────────────────────────────────────────
 function monResetAll(){
   monStopTest();
-  [TS,RPS,P50,P95,P99,ERR].forEach(a=>a.length=0);
-  monAllLatencies.length=0;monWindowBucket.length=0;
+  [TS,RPS,P50,P95,P99,ERR,SC_INST,SC_CAP].forEach(a=>a.length=0);
+  monAllLatencies.length=0; monWindowBucket.length=0;
   monTotalReqs=monTotalFails=monObsCount=monReqDisplay=0;
-  monPrevRps=monPrevP99=monPrevErrPct=0;monModelReady=false;
+  monPrevRps=monPrevP99=monPrevErrPct=0; monModelReady=false;
+  currentActiveVU=0; currentPhaseIdx=-1;
 
-  ['plot-tp','plot-lat','plot-err','plot-hist'].forEach(id=>{
+  infra.instances=1; infra.provisioning=false; infra.overSatTicks=0;
+  infra.alertSent=false; infra.alertTicks=0; infra.scaleEvents=[];
+
+  ['plot-scale','plot-lat','plot-err','plot-hist'].forEach(id=>{
     try{Plotly.purge(id);}catch(_){}
   });
   monInitPlots();
@@ -583,53 +776,74 @@ function monResetAll(){
    's-peak-rps','s-median','s-total','s-fail','s-p95','s-p99'].forEach(id=>{
     document.getElementById(id).textContent='—';
   });
+  document.getElementById('kpi-inst').textContent='1';
+  document.getElementById('kpi-inst').classList.remove('inst-blink');
+  document.getElementById('kpi-inst-sub').textContent='running';
+  document.getElementById('kpi-cap').textContent='0%';
+  document.getElementById('kpi-cap').style.color='var(--text-bright)';
   document.getElementById('hdr-total').textContent='0';
   document.getElementById('hdr-fail').textContent='0';
   document.getElementById('req-log').innerHTML=
     '<div class="log-entry log-entry--idle">Awaiting requests...</div>';
   document.getElementById('obs-log').innerHTML=
-    '<div style="font-size:11px;color:var(--text-dim);">Automatic observations will appear during the test.</div>';
+    '<div style="font-size:11px;color:var(--text-dim);">Observations will appear during the load test.</div>';
   document.getElementById('obs-count').textContent='0';
   document.getElementById('req-count').textContent='0 requests';
   document.getElementById('mon-progress').style.width='0%';
   document.getElementById('mon-elapsed').textContent='';
   document.getElementById('pill-health').className='pill ok';
   document.getElementById('pill-health').textContent='READY';
+  document.getElementById('pill-health').style.borderColor='';
+  document.getElementById('pill-health').style.color='';
+  document.getElementById('profile-badge').textContent='Idle';
   document.getElementById('mon-btn-init').disabled=false;
-  document.getElementById('mon-btn-start').disabled=true;
+  document.getElementById('mon-btn-start').disabled=false;
   document.getElementById('mon-btn-stop').disabled=true;
   document.getElementById('mon-btn-reset').disabled=true;
-  monSetStatus('Ready — click Init model, then Start test');
+  updatePhaseIndicator(-1);
+  monSetStatus('Ready — click Load Test to begin automated demo');
 }
 
-// ── Profile selector ──────────────────────────────────────────────────────────
-function setProfile(btn){
-  document.querySelectorAll('.ramp-btn').forEach(b=>b.classList.remove('active'));
-  btn.classList.add('active');
-  monTargetUsers=parseInt(btn.dataset.users);
-  document.getElementById('profile-badge').textContent=btn.textContent+' users';
+// ── Slack Alert ──────────────────────────────────────────────────────────────
+async function sendSlackAlert(){
+  const url = document.getElementById('cfg-url').value.trim().replace(/\/$/,'');
+  try {
+    await fetch(`${url}/api/alert/infrastructure`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        instances:    infra.instances,
+        utilization:  Math.round(getUtilization() * 100),
+        rps:          RPS.length ? RPS[RPS.length-1] : 0,
+        error_rate:   ERR.length ? ERR[ERR.length-1] : 0,
+        p99:          P99.length ? P99[P99.length-1] : 0,
+        virtual_users: currentActiveVU,
+        message:      `All ${infra.instances} instances at ${Math.round(getUtilization()*100)}% capacity. Error rate rising. Manual scale-up or traffic shedding recommended.`,
+      }),
+    });
+  } catch (_) {}
 }
 
 function monSetStatus(msg){
   document.getElementById('mon-status').textContent=msg;
 }
 
-// ── Theme toggle ──────────────────────────────────────────────────────────────
+// ── Theme toggle ─────────────────────────────────────────────────────────────
 document.getElementById('mon-theme-toggle').addEventListener('click',()=>{
   const h=document.documentElement;
   const d=h.getAttribute('data-theme')==='dark';
   h.setAttribute('data-theme',d?'light':'dark');
   document.getElementById('mon-theme-icon').textContent=d?'☽':'☀';
   const u={paper_bgcolor:'rgba(0,0,0,0)',plot_bgcolor:'rgba(0,0,0,0)'};
-  ['plot-tp','plot-lat','plot-err','plot-hist'].forEach(id=>{
+  ['plot-scale','plot-lat','plot-err','plot-hist'].forEach(id=>{
     try{Plotly.relayout(id,u);}catch(_){}
   });
 });
 
-// ── Boot ──────────────────────────────────────────────────────────────────────
+// ── Boot ─────────────────────────────────────────────────────────────────────
 window.addEventListener('load',()=>{
   monInitPlots();
-  monSetStatus('Ready — click Init model, then Start test');
+  monSetStatus('Ready — click Load Test to begin automated demo');
 });
 </script>
 </body>
