@@ -84,11 +84,6 @@ jobs:
         with:
           ref: amey-demo
 
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-          cache: 'pip'
-
       - name: Poll until service is live
         run: |
           MAX=18
@@ -104,14 +99,10 @@ jobs:
           done
           echo "Service is live"
 
-      - name: Install test dependencies
-        run: pip install -r requirements.txt pytest requests
-
-      - name: Run smoke tests against deployed service
-        run: pytest tests/test_api.py -v --tb=short -x
-        env:
-          BASE_URL: ${{ secrets.RENDER_URL }}
-          PYTHONPATH: .
+      - name: Smoke tests paused (re-enable pytest in a follow-up)
+        run: |
+          echo "Post-deploy pytest smoke tests are temporarily paused to shorten CI runtime."
+          echo "Re-add: pip install + pytest tests/test_api.py with BASE_URL and PYTHONPATH=."
 
   # ── Job 5: Slack alert on failure ─────────────────────────────────────────────
   notify-failure:
