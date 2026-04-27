@@ -10,7 +10,6 @@ let simRunning  = false;
 let logCount    = 0;
 
 let kdeStore   = {};
-let kdeFeature = 'coal';
 let driftLabels = [];
 let ksHistory   = [];
 let psiHistory  = [];
@@ -22,39 +21,32 @@ let pcaIncomingY = [];
 
 let PC1_RANGE       = null;
 let INTENSITY_RANGE = null;
-let KS_THRESHOLD    = 0.10;
+const KS_THRESHOLD  = 0.30;
+const FIXED_SPEED_S = 1.0;
+const KDE_FEATURES  = ['coal', 'gas', 'wind'];
 
 // ── DOM refs ──────────────────────────────────────────────────────────────────
 const btnInit     = document.getElementById('btn-init');
 const btnSim      = document.getElementById('btn-simulate');
 const btnPause    = document.getElementById('btn-pause');
 const btnReset    = document.getElementById('btn-reset');
-const btnAgentRun = document.getElementById('btn-agent-run');
-const btnAgentReport = document.getElementById('btn-agent-report');
-const btnAgentToggle = document.getElementById('btn-agent-toggle');
-const btnAgentRefresh = document.getElementById('btn-agent-refresh');
-const cfgSpeed    = document.getElementById('cfg-speed');
-const cfgSpeedVal = document.getElementById('cfg-speed-val');
 const themeToggle = document.getElementById('theme-toggle');
 const themeIcon   = document.getElementById('theme-icon');
-const agentStatusEl = document.getElementById('agent-status');
-const agentBadge = document.getElementById('agent-badge');
-const agentLogBody = document.getElementById('agent-log-body');
-
-let agentPollTimer = null;
-let agentLogsVisible = true;
-let lastAgentLogCount = 0;
-let latestAgentReportUrl = null;
-
-cfgSpeed.addEventListener('input', () => {
-  cfgSpeedVal.textContent = parseFloat(cfgSpeed.value).toFixed(1) + 's';
-});
 
 // ── Theme ─────────────────────────────────────────────────────────────────────
+function applyStoredTheme() {
+  const saved = localStorage.getItem('cw-theme');
+  const theme = saved === 'light' ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', theme);
+  themeIcon.textContent = theme === 'dark' ? '☀' : '☽';
+}
+
 themeToggle.addEventListener('click', () => {
   const html   = document.documentElement;
   const isDark = html.getAttribute('data-theme') === 'dark';
-  html.setAttribute('data-theme', isDark ? 'light' : 'dark');
+  const next = isDark ? 'light' : 'dark';
+  html.setAttribute('data-theme', next);
+  localStorage.setItem('cw-theme', next);
   themeIcon.textContent = isDark ? '☽' : '☀';
   reapplyPlotlyTheme();
 });
@@ -75,6 +67,10 @@ function reapplyPlotlyTheme() {
     paper_bgcolor: t.paper, plot_bgcolor: t.plot, 'font.color': t.text,
     'xaxis.gridcolor': t.grid, 'xaxis.color': t.text,
     'yaxis.gridcolor': t.grid, 'yaxis.color': t.text,
+    'xaxis2.gridcolor': t.grid, 'xaxis2.color': t.text,
+    'yaxis2.gridcolor': t.grid, 'yaxis2.color': t.text,
+    'xaxis3.gridcolor': t.grid, 'xaxis3.color': t.text,
+    'yaxis3.gridcolor': t.grid, 'yaxis3.color': t.text,
   };
   ['plot-pca', 'plot-kde', 'plot-drift'].forEach(id => {
     try { Plotly.relayout(id, u); } catch (_) {}
@@ -151,32 +147,51 @@ function updatePcaLine(line_pc1, line_y) {
 
 // ── KDE plot ──────────────────────────────────────────────────────────────────
 function initKdePlot() {
-  Plotly.newPlot('plot-kde', [
-    {
-      x: [], y: [], mode: 'lines', type: 'scatter', name: 'Reference',
-      fill: 'tozeroy', fillcolor: 'rgba(91,143,255,0.15)',
-      line: { color: '#5b8fff', width: 2 },
-    },
-    {
-      x: [], y: [], mode: 'lines', type: 'scatter', name: 'Current',
-      fill: 'tozeroy', fillcolor: 'rgba(224,82,82,0.12)',
-      line: { color: '#e05252', width: 2 },
-    },
-  ],
-  makeLayout('Feature value (%)', 'Density', null, null),
-  CFG);
+  const traces = [];
+  KDE_FEATURES.forEach((feat, idx) => {
+    traces.push({
+      x: [], y: [], mode: 'lines', type: 'scatter',
+      name: `${feat} (reference)`,
+      line: { width: 1.9, color: ['#5b8fff', '#6fc27d', '#8b7cff'][idx] },
+      xaxis: `x${idx + 1}`,
+      yaxis: `y${idx + 1}`,
+    });
+    traces.push({
+      x: [], y: [], mode: 'lines', type: 'scatter',
+      name: `${feat} (current)`,
+      line: { width: 1.9, color: ['#e05252', '#d97706', '#ef4444'][idx], dash: 'dot' },
+      xaxis: `x${idx + 1}`,
+      yaxis: `y${idx + 1}`,
+    });
+  });
+  const t = plotlyTheme();
+  Plotly.newPlot('plot-kde', traces, {
+    paper_bgcolor: t.paper,
+    plot_bgcolor: t.plot,
+    font: { family: "'DM Mono', monospace", color: t.text, size: 9 },
+    margin: { l: 42, r: 10, t: 10, b: 34 },
+    showlegend: true,
+    legend: { orientation: 'h', y: 1.18, x: 0, bgcolor: 'rgba(0,0,0,0)', font: { size: 8 } },
+    grid: { rows: 1, columns: 3, pattern: 'independent' },
+    xaxis: { title: { text: 'coal', font: { size: 9 } }, gridcolor: t.grid, color: t.text },
+    yaxis: { title: { text: 'density', font: { size: 9 } }, gridcolor: t.grid, color: t.text },
+    xaxis2: { title: { text: 'gas', font: { size: 9 } }, gridcolor: t.grid, color: t.text },
+    yaxis2: { title: { text: 'density', font: { size: 9 } }, gridcolor: t.grid, color: t.text },
+    xaxis3: { title: { text: 'wind', font: { size: 9 } }, gridcolor: t.grid, color: t.text },
+    yaxis3: { title: { text: 'density', font: { size: 9 } }, gridcolor: t.grid, color: t.text },
+  }, CFG);
 }
 
-function updateKdePlot(feat) {
-  const d = kdeStore[feat];
-  if (!d) return;
-  Plotly.restyle('plot-kde', { x: [d.ref_x, d.cur_x], y: [d.ref_y, d.cur_y] }, [0, 1]);
+function updateKdePlot() {
+  const xVals = [];
+  const yVals = [];
+  KDE_FEATURES.forEach((feat) => {
+    const d = kdeStore[feat] || { ref_x: [], ref_y: [], cur_x: [], cur_y: [] };
+    xVals.push(d.ref_x, d.cur_x);
+    yVals.push(d.ref_y, d.cur_y);
+  });
+  Plotly.restyle('plot-kde', { x: xVals, y: yVals }, [0, 1, 2, 3, 4, 5]);
 }
-
-document.getElementById('kde-feature-select').addEventListener('change', e => {
-  kdeFeature = e.target.value;
-  updateKdePlot(kdeFeature);
-});
 
 // ── Drift metrics history (KS + PSI) ─────────────────────────────────────────
 function initDriftPlot() {
@@ -290,111 +305,19 @@ function flashDrift(id) {
   setTimeout(() => el.classList.remove('drift-flash'), 2200);
 }
 
-function renderAgentStatus(s) {
-  if (!agentStatusEl || !s) return;
-  latestAgentReportUrl = s.report_available && s.report_url ? `${API}${s.report_url}` : null;
-  if (btnAgentReport) {
-    btnAgentReport.disabled = !latestAgentReportUrl;
-    btnAgentReport.title = latestAgentReportUrl ? 'Open latest drift report' : 'No report generated yet';
-  }
-  if (agentBadge) {
-    agentBadge.className = 'pill';
-    agentBadge.textContent = (s.status || 'idle').toUpperCase();
-  }
-  if (!s.available) {
-    agentStatusEl.textContent = 'Agent: unavailable';
-    btnAgentRun.disabled = true;
-    if (agentBadge) {
-      agentBadge.className = 'pill';
-      agentBadge.textContent = 'UNAVAILABLE';
-    }
-    return;
-  }
-
-  if (s.running) {
-    agentStatusEl.textContent = `Agent: running (${s.job_id?.slice(0, 8) || 'n/a'})`;
-    btnAgentRun.disabled = true;
-    if (agentBadge) {
-      agentBadge.className = 'pill drifting';
-      agentBadge.textContent = 'RUNNING';
-    }
-    return;
-  }
-
-  btnAgentRun.disabled = false;
-  if (s.status === 'succeeded') {
-    agentStatusEl.textContent = `Agent: succeeded (exit ${s.exit_code})`;
-    if (agentBadge) {
-      agentBadge.className = 'pill ok';
-      agentBadge.textContent = 'SUCCEEDED';
-    }
-  } else if (s.status === 'failed') {
-    agentStatusEl.textContent = `Agent: failed (${s.error || 'check logs'})`;
-    if (agentBadge) {
-      agentBadge.className = 'pill drifting';
-      agentBadge.textContent = 'FAILED';
-    }
-  } else {
-    agentStatusEl.textContent = 'Agent: idle';
-    if (agentBadge) {
-      agentBadge.className = 'pill';
-      agentBadge.textContent = 'IDLE';
-    }
-  }
-}
-
-async function fetchAgentStatus() {
-  try {
-    const res = await fetch(`${API}/api/agent/status`);
-    if (!res.ok) return;
-    const status = await res.json();
-    renderAgentStatus(status);
-    if (status.running || status.log_lines !== lastAgentLogCount) {
-      fetchAgentLogs();
-    }
-  } catch (_) {}
-}
-
-function renderAgentLogs(payload) {
-  if (!agentLogBody || !payload) return;
-  const logs = payload.logs || [];
-  lastAgentLogCount = logs.length;
-
-  if (logs.length === 0) {
-    agentLogBody.innerHTML = '<div class="log-entry log-entry--idle">No agent logs yet.</div>';
-    return;
-  }
-
-  agentLogBody.innerHTML = logs.map(line =>
-    `<div class="log-entry log-entry--ok">${line.replaceAll('<', '&lt;').replaceAll('>', '&gt;')}</div>`
-  ).join('');
-  agentLogBody.scrollTop = agentLogBody.scrollHeight;
-}
-
-async function fetchAgentLogs() {
-  try {
-    const res = await fetch(`${API}/api/agent/logs`);
-    if (!res.ok) return;
-    const payload = await res.json();
-    renderAgentLogs(payload);
-  } catch (_) {}
-}
-
 // ── INITIALIZE ────────────────────────────────────────────────────────────────
 btnInit.addEventListener('click', async () => {
   btnInit.disabled = true;
   addLog('Initializing pipeline…', 'idle');
   updateHeader('—', 0, '—', 'INITIALIZING');
 
-  KS_THRESHOLD = parseFloat(document.getElementById('cfg-threshold').value);
-
   const config = {
-    feature_x:    document.getElementById('cfg-feature-x').value,
+    feature_x:    'coal',
     feature_y:    'forecast_intensity',
     ks_threshold: KS_THRESHOLD,
     n_init:       parseInt(document.getElementById('cfg-n-init').value),
     n_monthly:    parseInt(document.getElementById('cfg-n-monthly').value),
-    speed:        parseFloat(document.getElementById('cfg-speed').value),
+    speed:        FIXED_SPEED_S,
   };
 
   // AbortController for broad browser compatibility
@@ -427,11 +350,16 @@ btnInit.addEventListener('click', async () => {
     initKdePlot();
     initDriftPlot();
 
-    kdeStore[config.feature_x] = {
-      ref_x: d.kde_x, ref_y: d.kde_ref_y,
-      cur_x: d.kde_x, cur_y: d.kde_ref_y,
-    };
-    updateKdePlot(kdeFeature);
+    kdeStore = d.kde_multi || {};
+    if (!kdeStore.coal) {
+      kdeStore.coal = {
+        ref_x: d.kde_x,
+        ref_y: d.kde_ref_y,
+        cur_x: d.kde_x,
+        cur_y: d.kde_ref_y,
+      };
+    }
+    updateKdePlot();
 
     updateDash({ ...d, retrained: false, month_idx: 0 });
     updateHeader(d.month, 1, d.total_months, 'READY');
@@ -484,12 +412,15 @@ btnSim.addEventListener('click', () => {
       updatePcaLine(d.new_line.line_pc1, d.new_line.line_y);
     }
 
-    const feat = document.getElementById('cfg-feature-x').value;
-    kdeStore[feat] = {
-      ref_x: d.kde_ref_x, ref_y: d.kde_ref_y,
-      cur_x: d.kde_cur_x, cur_y: d.kde_cur_y,
-    };
-    if (kdeFeature === feat) updateKdePlot(kdeFeature);
+    if (d.kde_multi) {
+      kdeStore = d.kde_multi;
+    } else {
+      kdeStore.coal = {
+        ref_x: d.kde_ref_x, ref_y: d.kde_ref_y,
+        cur_x: d.kde_cur_x, cur_y: d.kde_cur_y,
+      };
+    }
+    updateKdePlot();
 
     updateDriftHistory(d.month, d.ks_stat, d.psi, d.retrained);
     if (d.drift_pills) updatePills(d.drift_pills);
@@ -498,7 +429,6 @@ btnSim.addEventListener('click', () => {
     if (d.drift_detected) {
       flashDrift('panel-pca');
       flashDrift('panel-kde');
-      flashDrift('panel-pred');
       document.getElementById('pill-drift').className   = 'pill drifting';
       document.getElementById('pill-drift').textContent = `DRIFT: ${d.ks_stat}`;
     } else {
@@ -579,42 +509,4 @@ btnReset.addEventListener('click', async () => {
   addLog('Pipeline reset.', 'idle');
 });
 
-btnAgentRun.addEventListener('click', async () => {
-  btnAgentRun.disabled = true;
-  try {
-    const res = await fetch(`${API}/api/agent/run`, { method: 'POST' });
-    const out = await res.json();
-    if (out.status === 'started') {
-      addLog(`Agent run started (${out.job_id.slice(0, 8)})`, 'ok');
-    } else if (out.status === 'already_running') {
-      addLog(`Agent already running (${out.job_id.slice(0, 8)})`, 'idle');
-    } else {
-      addLog('Agent run request sent.', 'idle');
-    }
-  } catch (err) {
-    addLog(`Agent run failed: ${err.message}`, 'drift');
-  } finally {
-    fetchAgentStatus();
-  }
-});
-
-btnAgentToggle.addEventListener('click', () => {
-  agentLogsVisible = !agentLogsVisible;
-  agentLogBody.style.display = agentLogsVisible ? 'block' : 'none';
-  btnAgentToggle.textContent = agentLogsVisible ? 'Hide' : 'Show';
-});
-
-btnAgentRefresh.addEventListener('click', () => {
-  fetchAgentLogs();
-});
-
-if (btnAgentReport) {
-  btnAgentReport.addEventListener('click', () => {
-    if (!latestAgentReportUrl) return;
-    window.open(latestAgentReportUrl, '_blank', 'noopener,noreferrer');
-  });
-}
-
-fetchAgentStatus();
-fetchAgentLogs();
-agentPollTimer = setInterval(fetchAgentStatus, 3000);
+applyStoredTheme();

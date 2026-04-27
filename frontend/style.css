@@ -90,6 +90,25 @@ html, body {
   max-width: 1120px; margin: 0 auto;
   padding: 28px 20px 40px; display: flex; flex-direction: column; gap: 24px;
 }
+.dash-intro {
+  display: flex; justify-content: space-between; align-items: center;
+  gap: 22px; background: linear-gradient(135deg, var(--surface), var(--surface-2));
+  border: 1px solid var(--border); border-radius: 16px; padding: 20px 24px;
+}
+.dash-intro-copy h1 {
+  font-family: 'Syne', sans-serif; font-size: 27px; line-height: 1.2;
+  color: var(--text-bright); margin: 6px 0 10px;
+}
+.dash-intro-copy p { color: var(--text-dim); max-width: 640px; font-size: 12px; }
+.dash-intro-kicker {
+  font-size: 10px; color: var(--accent); letter-spacing: 0.12em; text-transform: uppercase;
+}
+.dash-intro-orb {
+  width: 86px; height: 86px; border-radius: 50%;
+  display: grid; place-items: center; font-size: 44px;
+  color: var(--accent); border: 1px solid var(--border-hi);
+  background: radial-gradient(circle at 30% 30%, var(--accent-dim), transparent 65%);
+}
 .dash-hero {
   display: flex; flex-direction: column; align-items: center;
   gap: 10px; padding: 16px 0 8px;
@@ -123,6 +142,21 @@ html, body {
 .dash-hero-sub {
   font-size: 11px; color: var(--text-dim); text-align: center; max-width: 460px;
 }
+.dash-chip-row {
+  margin-top: 6px; display: grid; grid-template-columns: repeat(3, minmax(160px, 1fr)); gap: 10px;
+  width: 100%; max-width: 760px;
+}
+.dash-chip {
+  border: 1px solid var(--border); background: var(--surface);
+  border-radius: 10px; padding: 10px 12px;
+  display: flex; flex-direction: column; gap: 2px;
+}
+.dash-chip span {
+  font-size: 9px; color: var(--text-dim); letter-spacing: 0.1em; text-transform: uppercase;
+}
+.dash-chip strong {
+  font-family: 'Syne', sans-serif; font-size: 13px; color: var(--text-bright); font-weight: 700;
+}
 
 .dash-charts {
   display: grid; grid-template-columns: 1fr 340px; gap: 16px;
@@ -154,9 +188,12 @@ html, body {
 }
 
 @media (max-width: 800px) {
+  .dash-intro { flex-direction: column; align-items: flex-start; }
+  .dash-intro-orb { display: none; }
   .dash-charts { grid-template-columns: 1fr; }
   .dash-stats  { grid-template-columns: 1fr; }
   .dash-stats-grid { grid-template-columns: repeat(2, 1fr); }
+  .dash-chip-row { grid-template-columns: 1fr; }
 }
 
 .month-ticker { display: flex; flex-direction: column; align-items: center; }
@@ -207,6 +244,9 @@ html, body {
 .ctrl-group input:focus { border-color: var(--accent); }
 .ctrl-group input[type="range"] { width: 100px; accent-color: var(--accent); cursor: pointer; }
 #cfg-speed-val { font-size: 11px; color: var(--accent); min-width: 28px; }
+.ctrl-group input:disabled {
+  opacity: 0.75; cursor: not-allowed;
+}
 .ctrl-actions { display: flex; align-items: flex-end; gap: 8px; margin-left: auto; }
 
 /* ── Buttons ──────────────────────────────────────────────────── */
@@ -268,6 +308,7 @@ html, body {
 .plot-area       { height: 300px; }
 .plot-area--mini { height: 90px; }
 #panel-pca .plot-area { height: 420px; }
+#panel-kde .plot-area { height: 330px; }
 
 /* ── KDE feature dropdown ─────────────────────────────────────── */
 .kde-controls select {

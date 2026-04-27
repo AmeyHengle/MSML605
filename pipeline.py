@@ -262,6 +262,16 @@ class PipelineState:
 
         gas_vals     = rows[self.feature_x].dropna().values
         kde_x, kde_y = kde_curve(gas_vals)
+        kde_multi = {}
+        for feat in ENERGY_FEATURES:
+            feat_vals = rows[feat].dropna().values
+            fx, fy = kde_curve(feat_vals)
+            kde_multi[feat] = {
+                'ref_x': fx,
+                'ref_y': fy,
+                'cur_x': fx,
+                'cur_y': fy,
+            }
 
         self.exp_X.extend(X_m.tolist())
         self.exp_y.extend(y_m.tolist())
@@ -296,6 +306,7 @@ class PipelineState:
             'line_y':          line_y,
             'kde_x':           kde_x,
             'kde_ref_y':       kde_y,
+            'kde_multi':       kde_multi,
             'pc1_range':       self.pc1_range,
             'intensity_range': self.intensity_range,
             'months_list':     days_list,
@@ -325,6 +336,18 @@ class PipelineState:
 
         kde_rx, kde_ry = kde_curve(np.array(self.exp_gas))
         kde_cx, kde_cy = kde_curve(cur_gas)
+        kde_multi = {}
+        for feat in ENERGY_FEATURES:
+            ref_vals = np.array(self.exp_map[feat])
+            cur_vals = cur_map[feat]
+            fx_ref, fy_ref = kde_curve(ref_vals)
+            fx_cur, fy_cur = kde_curve(cur_vals)
+            kde_multi[feat] = {
+                'ref_x': fx_ref,
+                'ref_y': fy_ref,
+                'cur_x': fx_cur,
+                'cur_y': fy_cur,
+            }
 
         # Accumulate before retrain so new model trains on current month too
         self.exp_X.extend(X_m.tolist())
@@ -391,6 +414,7 @@ class PipelineState:
             'kde_ref_y':      kde_ry,
             'kde_cur_x':      kde_cx,
             'kde_cur_y':      kde_cy,
+            'kde_multi':      kde_multi,
             'drift_pills':    pills,
             'checkpoint':     checkpoint,
             'log':            log,

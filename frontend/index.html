@@ -27,6 +27,17 @@
 </header>
 
 <main class="dash">
+  <section class="dash-intro">
+    <div class="dash-intro-copy">
+      <div class="dash-intro-kicker">UK Grid Carbon Intelligence</div>
+      <h1>Track forecasted carbon intensity and generation mix in one place.</h1>
+      <p>
+        CarbonWatch combines historical grid data, model diagnostics, and live forecast trends
+        to support cleaner operational decisions.
+      </p>
+    </div>
+    <div class="dash-intro-orb" aria-hidden="true">◍</div>
+  </section>
 
   <section class="dash-hero">
     <div class="dash-hero-label">Current Carbon Intensity Forecast</div>
@@ -37,6 +48,20 @@
     </div>
     <div class="dash-hero-sub">
       Predicted by linear regression model trained on all historical generation mix data
+    </div>
+    <div class="dash-chip-row">
+      <div class="dash-chip">
+        <span>Forecast window</span>
+        <strong>48 latest intervals</strong>
+      </div>
+      <div class="dash-chip">
+        <span>Model target</span>
+        <strong>forecast_intensity</strong>
+      </div>
+      <div class="dash-chip">
+        <span>Refresh source</span>
+        <strong>Render API</strong>
+      </div>
     </div>
   </section>
 
@@ -104,6 +129,13 @@ const INTENSITY_COLORS = {
   'high':      '#FF3A00',
   'very high': '#C00000',
 };
+
+function applyStoredTheme() {
+  const saved = localStorage.getItem('cw-theme');
+  const theme = saved === 'light' ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', theme);
+  document.getElementById('theme-icon').textContent = theme === 'dark' ? '☀' : '☽';
+}
 
 function themeColors() {
   const s = getComputedStyle(document.documentElement);
@@ -256,10 +288,12 @@ document.getElementById('theme-toggle').addEventListener('click', () => {
   const html = document.documentElement;
   const next = html.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
   html.setAttribute('data-theme', next);
+  localStorage.setItem('cw-theme', next);
   document.getElementById('theme-icon').textContent = next === 'dark' ? '☀' : '☾';
   reapplyTheme();
 });
 
+applyStoredTheme();
 loadDashboard();
 </script>
 </body>
