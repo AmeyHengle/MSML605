@@ -184,14 +184,76 @@ class PredictRequest(BaseModel):
     features: List[float]
 
 
+def _deterministic_comprehensive_summary(report_data: dict) -> str:
+    retrain_found = bool(report_data.get("retrain_found"))
+    retrain_period = report_data.get("retrain_period", "n/a")
+    model_version = report_data.get("model_version", "n/a")
+    ks_stat = report_data.get("ks_stat", "n/a")
+    psi = report_data.get("psi", "n/a")
+    r2 = report_data.get("r2", "n/a")
+    rmse = report_data.get("rmse", "n/a")
+    top_feats = report_data.get("top_drift_features", [])[:6]
+    top_feats_text = ", ".join(top_feats) if top_feats else "none"
+
+    history = report_data.get("history") or {}
+    ks_hist = history.get("ks") or []
+    psi_hist = history.get("psi") or []
+    r2_hist = history.get("r2") or []
+    rmse_hist = history.get("rmse") or []
+
+    ks_start = ks_hist[0] if ks_hist else "n/a"
+    ks_end = ks_hist[-1] if ks_hist else "n/a"
+    psi_start = psi_hist[0] if psi_hist else "n/a"
+    psi_end = psi_hist[-1] if psi_hist else "n/a"
+    r2_start = r2_hist[0] if r2_hist else "n/a"
+    r2_end = r2_hist[-1] if r2_hist else "n/a"
+    rmse_start = rmse_hist[0] if rmse_hist else "n/a"
+    rmse_end = rmse_hist[-1] if rmse_hist else "n/a"
+
+    status_line = (
+        "Retraining was triggered and a new model was promoted."
+        if retrain_found
+        else "No retraining trigger was observed; monitoring continued."
+    )
+    risk_line = (
+        "Risk is elevated due to large distribution shift (high KS/PSI), so continued monitoring without retraining may degrade forecast reliability."
+        if retrain_found
+        else "Risk remains moderate; continue monitoring for sustained drift trends before promoting a new model."
+    )
+    action_line = (
+        "Recommended action: keep the promoted model under close observation for the next few windows, and validate error stability before declaring steady-state."
+        if retrain_found
+        else "Recommended action: keep the current model, gather more windows, and retrain only if drift and error trends persist."
+    )
+
+    return (
+        "Executive summary: "
+        f"{status_line} At period {retrain_period}, model version {model_version} recorded KS={ks_stat}, PSI={psi}, R2={r2}, and RMSE={rmse}. "
+        f"Top drift-contributing features were {top_feats_text}. "
+        "Trend analysis: "
+        f"KS moved from {ks_start} to {ks_end}, PSI moved from {psi_start} to {psi_end}, R2 moved from {r2_start} to {r2_end}, and RMSE moved from {rmse_start} to {rmse_end} across the observed window. "
+        "Operational interpretation: The drift profile indicates a material input distribution change that can alter forecast behavior and confidence bands. "
+        f"{risk_line} {action_line}"
+    )
+
+
 def _generate_main_pipeline_summary(report_data: dict) -> str:
     api_key = os.getenv("GROQ_API_KEY", "").strip()
     if not api_key:
         _log_report_event("warn", "groq_api_key_missing")
-        return (
-            "Groq summary unavailable because GROQ_API_KEY is not configured. "
-            "Retrain event detected in main pipeline; review attached metrics and charts in the report."
-        )
+        return _deterministic_comprehensive_summary(report_data)
+
+    analysis_prompt = (
+        "Write a comprehensive ML monitoring report in plain text (no markdown headings). "
+        "Use 4 sections with labels exactly as:\n"
+        "1) Executive Summary:\n"
+        "2) Drift and Data Shift Analysis:\n"
+        "3) Model Performance and Retrain Impact:\n"
+        "4) Risks and Recommended Actions:\n"
+        "Requirements: 220-320 words total, include numeric evidence (KS, PSI, R2, RMSE), "
+        "mention top drifted features, describe trend direction from history arrays, "
+        "and end with concrete next actions for product and ML teams."
+    )
 
     model_candidates = [
         os.getenv("GROQ_MODEL", "").strip(),
@@ -208,13 +270,13 @@ def _generate_main_pipeline_summary(report_data: dict) -> str:
                 {
                     "role": "system",
                     "content": (
-                        "You are an ML product analyst. Produce a comprehensive summary for product stakeholders. "
-                        "Cover drift behavior, retrain trigger rationale, old/new model impact, risk, and next actions."
+                        "You are an ML product analyst writing for product leadership and MLOps engineers. "
+                        "Be specific, data-driven, and actionable."
                     ),
                 },
                 {
                     "role": "user",
-                    "content": json.dumps(report_data)[:14000],
+                    "content": analysis_prompt + "\n\nInput metrics JSON:\n" + json.dumps(report_data)[:14000],
                 },
             ],
         }
@@ -242,6 +304,8 @@ def _generate_main_pipeline_summary(report_data: dict) -> str:
             out = (choices[0].get("message") or {}).get("content", "").strip()
             if not out:
                 raise RuntimeError("Empty summary")
+            if len(out) < 350:
+                raise RuntimeError("Summary too short")
             _log_report_event("info", "groq_request_succeeded", summary_chars=len(out), model=model_name)
             return out
         except (urllib.error.URLError, TimeoutError, RuntimeError, json.JSONDecodeError) as exc:
@@ -255,9 +319,19 @@ def _generate_main_pipeline_summary(report_data: dict) -> str:
             f"{gemini_model}:generateContent?key={gemini_key}"
         )
         gemini_body = {
+            "systemInstruction": {
+                "parts": [
+                    {
+                        "text": (
+                            "You are an ML product analyst writing for product leadership and MLOps engineers. "
+                            "Be specific, data-driven, and actionable."
+                        )
+                    }
+                ]
+            },
             "generationConfig": {
                 "temperature": 0.2,
-                "maxOutputTokens": 700,
+                "maxOutputTokens": 1100,
             },
             "contents": [
                 {
@@ -265,8 +339,8 @@ def _generate_main_pipeline_summary(report_data: dict) -> str:
                     "parts": [
                         {
                             "text": (
-                                "You are an ML product analyst. Produce a comprehensive summary for product stakeholders. "
-                                "Cover drift behavior, retrain trigger rationale, old/new model impact, risk, and next actions.\n\n"
+                                analysis_prompt
+                                + "\n\nInput metrics JSON:\n"
                                 + json.dumps(report_data)[:14000]
                             )
                         }
@@ -295,6 +369,8 @@ def _generate_main_pipeline_summary(report_data: dict) -> str:
             ).strip()
             if not text_out:
                 raise RuntimeError("Empty Gemini summary")
+            if len(text_out) < 350:
+                raise RuntimeError("Gemini summary too short")
             _log_report_event("info", "gemini_request_succeeded", summary_chars=len(text_out), model=gemini_model)
             return text_out
         except (urllib.error.URLError, TimeoutError, RuntimeError, json.JSONDecodeError) as exc:
@@ -303,8 +379,7 @@ def _generate_main_pipeline_summary(report_data: dict) -> str:
         _log_report_event("warn", "gemini_api_key_missing")
 
     return (
-        "LLM summary request failed (Groq and Gemini unavailable from hosted runtime). "
-        "Retrain event detected in main pipeline; use attached metrics and report artifacts for review."
+        _deterministic_comprehensive_summary(report_data)
     )
 
 
@@ -369,7 +444,7 @@ def _build_main_report_html(report_data: dict, summary: str) -> str:
   <div class="meta">Retrain period: {report_data.get('retrain_period')}</div>
   <div class="meta">Model version: {report_data.get('model_version')}</div>
   <div class="panel">
-    <h3>Groq Summary</h3>
+    <h3>LLM Comprehensive Summary</h3>
     <p>{summary}</p>
   </div>
   <div class="panel">
