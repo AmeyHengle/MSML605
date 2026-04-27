@@ -104,10 +104,13 @@ jobs:
           done
           echo "Service is live"
 
-      - name: Smoke tests paused for demo
-        run: |
-          echo "Smoke tests are temporarily paused for demo prep."
-          echo "Re-enable pytest tests/test_api.py in this job after the demo."
+      - name: Install test dependencies
+        run: pip install -r requirements.txt pytest requests
+
+      - name: Run smoke tests against deployed service
+        run: pytest tests/test_api.py -v --tb=short -x
+        env:
+          BASE_URL: ${{ secrets.RENDER_URL }}
 
   # ── Job 5: Slack alert on failure ─────────────────────────────────────────────
   notify-failure:
