@@ -1,0 +1,11 @@
+2026-04-17 22:04:33 | INFO     | ml605.train_with_mlflow | Run started; log file: F:\ml605-project\logs\train_with_mlflow_20260417_220433.log
+2026-04-17 22:05:21 | INFO     | ml605.train_with_mlflow | Rows: train=83848 test=20962
+2026-04-17 22:05:21 | INFO     | ml605.train_with_mlflow | Features: total=34 fuel_mix=9 factors=14
+2026-04-17 22:05:21 | INFO     | ml605.train_with_mlflow | RMSE: 10.9005
+2026-04-17 22:05:21 | INFO     | ml605.train_with_mlflow | MAE : 7.6869
+2026-04-17 22:05:21 | INFO     | ml605.train_with_mlflow | R2  : 0.9635
+2026-04-17 22:05:21 | INFO     | ml605.train_with_mlflow | MAPE: 6.75%
+2026-04-17 22:05:21 | INFO     | ml605.train_with_mlflow | Baseline RMSE (forecast_intensity): 12.5936
+2026-04-17 22:05:21 | INFO     | ml605.train_with_mlflow | Train RMSE: 5.3526
+2026-04-17 22:05:21 | INFO     | ml605.train_with_mlflow | Train R2: 0.9934
+2026-04-17 22:05:21 | INFO     | ml605.train_with_mlflow | OOB Score: 0.9880

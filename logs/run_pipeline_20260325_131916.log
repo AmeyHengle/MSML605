@@ -1,0 +1,4 @@
+2026-03-25 13:19:16 | INFO     | ml605.run_pipeline | Run started; log file: F:\ml605-project\logs\run_pipeline_20260325_131916.log
+2026-03-25 13:19:18 | INFO     | ml605.run_pipeline | Pipeline window: 2026-03-25T05:19:18.406421+00:00 -> 2026-03-25T17:19:18.406438+00:00 (window_hours=12 interval_seconds=30)
+2026-03-25 13:19:31 | INFO     | ml605.run_pipeline | Train/test rows: 19/5
+2026-03-25 13:19:31 | INFO     | ml605.run_pipeline | Metrics: {'rmse': 13.754583155362353, 'mae': 11.091333333333333, 'r2': -0.15810821362498628, 'mape': 24.75331837606837}

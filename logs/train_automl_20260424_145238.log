@@ -1,0 +1,10 @@
+2026-04-24 14:52:38 | INFO     | ml605.train_automl | Run started; log file: F:\ml605-project\logs\train_automl_20260424_145238.log
+2026-04-24 14:54:52 | INFO     | ml605.train_automl | AutoML results (ranked by test RMSE):
+2026-04-24 14:54:52 | INFO     | ml605.train_automl |   1. ridge_baseline                 RMSE=8.3966  R2=0.9784
+2026-04-24 14:54:52 | INFO     | ml605.train_automl |   2. hist_gradient_boosting         RMSE=8.8010  R2=0.9762
+2026-04-24 14:54:52 | INFO     | ml605.train_automl |   3. gradient_boosting              RMSE=8.8760  R2=0.9758
+2026-04-24 14:54:52 | INFO     | ml605.train_automl |   4. extra_trees                    RMSE=10.0314  R2=0.9691
+2026-04-24 14:54:52 | INFO     | ml605.train_automl |   5. random_forest                  RMSE=10.9005  R2=0.9635
+2026-04-24 14:54:52 | INFO     | ml605.train_automl | Winner: ridge_baseline (RMSE=8.3966)
+2026-04-24 14:54:52 | INFO     | ml605.train_automl | Model v11 registered as Staging in MLflow Model Registry.
+2026-04-24 14:54:52 | INFO     | ml605.train_automl | To promote to Production: transition_model_stage('11', 'Production')

@@ -1,0 +1,39 @@
+INFO __main__: Loading data split from historical_data.csv
+INFO __main__: Train rows=83848  Test rows=20962  Features=34
+INFO __main__: Grid preset: large (303 combos)
+INFO __main__: === AutoML candidate sweep ===
+INFO __main__:   [automl 1/5] random_forest            rmse=10.9005 fit=22.99s
+INFO __main__:   [automl 2/5] extra_trees              rmse=10.0314 fit=19.28s
+INFO __main__:   [automl 3/5] hist_gradient_boosting   rmse=8.8010 fit=5.60s
+INFO __main__:   [automl 4/5] gradient_boosting        rmse=8.8760 fit=75.98s
+INFO __main__:   [automl 5/5] ridge_baseline           rmse=8.3966 fit=0.06s
+INFO __main__: Target RMSE auto-set to AutoML best = 8.3966
+INFO __main__: === Manual grid search (no MLflow, no AutoML) ===
+INFO __main__: Manual grid search: 303 combinations
+INFO __main__:   [   1/303] random_forest      rmse=12.3610 fit=2.89s cum=2.9s best=12.3610
+INFO __main__:   [  10/303] random_forest      rmse=11.2301 fit=5.23s cum=34.5s best=11.2301
+INFO __main__:   [  20/303] random_forest      rmse=10.3982 fit=5.86s cum=86.2s best=10.3982
+INFO __main__:   [  30/303] random_forest      rmse=10.8108 fit=14.15s cum=173.1s best=10.3521
+INFO __main__:   [  40/303] random_forest      rmse=10.3515 fit=11.17s cum=314.6s best=10.3515
+INFO __main__:   [  50/303] random_forest      rmse=11.2584 fit=16.83s cum=429.2s best=10.3515
+INFO __main__:   [  60/303] random_forest      rmse=10.3814 fit=11.32s cum=578.7s best=10.3515
+INFO __main__:   [  70/303] random_forest      rmse=10.8107 fit=17.91s cum=723.3s best=10.3303
+INFO __main__:   [  80/303] random_forest      rmse=10.3305 fit=38.87s cum=992.5s best=10.3303
+INFO __main__:   [  90/303] random_forest      rmse=11.2761 fit=29.48s cum=1211.9s best=10.3303
+INFO __main__:   [ 100/303] random_forest      rmse=10.3851 fit=35.43s cum=1520.3s best=10.3303
+INFO __main__:   [ 110/303] random_forest      rmse=10.8541 fit=47.38s cum=1946.2s best=10.3303
+INFO __main__:   [ 120/303] random_forest      rmse=10.3385 fit=38.39s cum=2404.0s best=10.3303
+INFO __main__:   [ 130/303] random_forest      rmse=11.2620 fit=42.90s cum=2701.0s best=10.3303
+INFO __main__:   [ 140/303] random_forest      rmse=10.3765 fit=56.91s cum=3195.9s best=10.3303
+INFO __main__:   [ 150/303] random_forest      rmse=10.8495 fit=80.14s cum=3891.8s best=10.3272
+INFO __main__:   [ 160/303] random_forest      rmse=10.3274 fit=23437.69s cum=28129.7s best=10.3272
+INFO __main__:   [ 170/303] random_forest      rmse=11.2885 fit=55.13s cum=28503.7s best=10.3272
+INFO __main__:   [ 180/303] random_forest      rmse=10.3759 fit=74.11s cum=29386.9s best=10.3272
+INFO __main__:   [ 190/303] random_forest      rmse=10.8378 fit=269.57s cum=30423.8s best=10.3258
+INFO __main__:   [ 200/303] random_forest      rmse=10.3268 fit=60.18s cum=31208.2s best=10.3258
+INFO __main__:   [ 210/303] gradient_boosting  rmse=25.8924 fit=38.97s cum=31461.4s best=8.9705
+INFO __main__:   [ 220/303] gradient_boosting  rmse=9.6916 fit=56.41s cum=31885.7s best=8.7444
+INFO __main__:   [ 230/303] gradient_boosting  rmse=8.9837 fit=54.36s cum=32391.0s best=8.7444
+INFO __main__:   [ 240/303] gradient_boosting  rmse=9.2710 fit=85.10s cum=33096.1s best=8.7444
+INFO __main__:   [ 250/303] gradient_boosting  rmse=10.1409 fit=96.49s cum=34027.8s best=8.7444
+INFO __main__:   [ 260/303] gradient_boosting  rmse=8.9151 fit=157.70s cum=34927.1s best=8.7444

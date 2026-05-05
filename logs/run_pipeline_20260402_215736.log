@@ -1,0 +1,6 @@
+2026-04-02 21:57:36 | INFO     | ml605.run_pipeline | Run started; log file: F:\ml605-project\logs\run_pipeline_20260402_215736.log
+2026-04-02 21:57:39 | INFO     | ml605.run_pipeline | Pipeline window: 2026-04-02T13:57:39.014735+00:00 -> 2026-04-03T01:57:39.014750+00:00 (window_hours=12)
+2026-04-02 21:57:44 | WARNING  | ml605.run_pipeline | Drift detected (14 features). Retraining triggered.
+2026-04-02 21:58:50 | INFO     | ml605.run_pipeline | Train/test rows: 19/5
+2026-04-02 21:58:50 | INFO     | ml605.run_pipeline | Best model: extra_trees  RMSE=7.3354
+2026-04-02 21:58:50 | INFO     | ml605.run_pipeline | Model v2 promoted to Production in MLflow Registry.

@@ -1,0 +1,3 @@
+2026-04-02 19:14:42 | INFO     | ml605.run_pipeline | Run started; log file: F:\ml605-project\logs\run_pipeline_20260402_191442.log
+2026-04-02 19:14:44 | INFO     | ml605.run_pipeline | Pipeline window: 2026-04-02T11:14:44.900284+00:00 -> 2026-04-02T23:14:44.900306+00:00 (window_hours=12)
+2026-04-02 19:14:50 | WARNING  | ml605.run_pipeline | Drift detected (14 features). Retraining triggered.
